@@ -16,14 +16,19 @@
 在專案根目錄執行：
 
 ```bash
-# Windows（命令提示字元或 PowerShell）
+# Windows（命令提示字元 cmd）
 mvnw.cmd spring-boot:run
+
+# Windows（PowerShell）：要加 .\，PowerShell 不會直接執行目前資料夾裡的檔案
+.\mvnw.cmd spring-boot:run
 
 # macOS / Linux
 ./mvnw spring-boot:run
 ```
 
-啟動時會**自動**依 `compose.yml` 啟動 MySQL 容器，並由 Flyway 建立資料表，不需要手動執行 `docker compose`。
+> macOS / Linux 若出現 `Permission denied`，改用：`sh mvnw spring-boot:run`
+
+啟動時會**自動**依 `docker-compose.yml` 啟動 MySQL 容器，並由 Flyway 建立資料表，不需要手動執行 `docker compose`。
 第一次啟動要下載套件與 MySQL 映像檔，約需 1～3 分鐘。
 
 看到 `Started StockHoldingsApplication` 後，打開瀏覽器：
@@ -45,22 +50,25 @@ mvnw.cmd spring-boot:run
 
 ### 密碼設定
 
-repo 裡**沒有真實密碼**，`compose.yml` 與 `application.properties` 中的 `devpass` 只是本機開發用的預設值。
+repo 裡**沒有真實密碼**，`docker-compose.yml` 與 `application.properties` 中的 `devpass` 只是本機開發用的預設值。
 正式環境請用環境變數覆蓋：
 
 | 環境變數 | 預設值 | 說明 |
 |---|---|---|
 | `DB_PASSWORD` | `devpass` | MySQL 帳號 `app` 的密碼 |
-| `DB_ROOT_PASSWORD` | `rootdevpass` | MySQL root 密碼（只用於 compose.yml） |
+| `DB_ROOT_PASSWORD` | `rootdevpass` | MySQL root 密碼（只用於 docker-compose.yml） |
 | `DB_HOST` / `DB_PORT` / `DB_USERNAME` | `localhost` / `3306` / `app` | 不透過 Docker Compose、改連自己的 MySQL 時使用（例如 `java -jar`） |
 
 ## 執行測試
 
 ```bash
-# Windows
+# Windows（命令提示字元 cmd）
 mvnw.cmd test
 
-# macOS / Linux
+# Windows（PowerShell）
+.\mvnw.cmd test
+
+# macOS / Linux（Permission denied 時改用 sh mvnw test）
 ./mvnw test
 ```
 
@@ -179,7 +187,7 @@ src/main/resources/
 ├── messages.properties  表單型別錯誤的中文訊息
 ├── static/       CSS、JS、圖片
 └── application.properties
-compose.yml       MySQL（Docker Compose）
+docker-compose.yml  MySQL（Docker Compose）
 ```
 
 ## 完成進度
