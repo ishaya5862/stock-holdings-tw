@@ -14,9 +14,56 @@
 
 		<div th:replace="~{fragments/layout :: flash}"></div>
 
+		<!--/*
+			總計卡片（第 4 題：頁面最上面顯示總計；台股慣例紅色是賺、綠色是虧）
+			- 沒有持股            → 「目前沒有持股，新增後即可計算盈虧」
+			- 全部都取不到收盤價  → 市值、盈虧、收益率顯示「尚未取得收盤價，暫時無法計算」（不顯示會被誤以為不賺不賠的 0）
+			- 部分取不到收盤價    → 照規格計算，加註「N 筆未取得收盤價，未計入市值與盈虧」
+		*/-->
+		<div class="card app-card mb-3" id="summary-card">
+			<div class="card-body">
+				<div th:unless="${summary.hasHoldings()}" class="text-muted">
+					<i class="bi bi-calculator me-1"></i>目前沒有持股，新增後即可計算盈虧
+				</div>
+
+				<div th:if="${summary.hasHoldings()}" class="row g-3 align-items-end">
+					<div class="col-12 col-md-4">
+						<div class="small text-muted">總盈虧（假設現在用收盤價全部賣出，已扣手續費與證交稅）</div>
+						<th:block th:unless="${summary.allQuotesMissing()}">
+							<div class="fs-3 fw-bold app-number" th:classappend="${@viewFormats.pnlClass(summary.pnl)}"
+								th:text="${@viewFormats.signedMoney(summary.pnl)} + ' 元'">+83,576 元</div>
+						</th:block>
+						<div th:if="${summary.allQuotesMissing()}" class="fs-6 text-muted">尚未取得收盤價，暫時無法計算</div>
+					</div>
+					<div class="col-6 col-md-2">
+						<div class="small text-muted">收益率</div>
+						<div th:unless="${summary.allQuotesMissing()}" class="fs-5 fw-semibold app-number"
+							th:classappend="${@viewFormats.pnlClass(summary.returnPct)}"
+							th:text="${@viewFormats.signedPct(summary.returnPct)}">+6.42%</div>
+						<div th:if="${summary.allQuotesMissing()}" class="small text-muted">尚未取得收盤價，暫時無法計算</div>
+					</div>
+					<div class="col-6 col-md-3">
+						<div class="small text-muted">總成本（含買進手續費）</div>
+						<div class="fs-5 app-number" th:text="${@viewFormats.money(summary.totalCost)}">1,301,852</div>
+					</div>
+					<div class="col-6 col-md-3">
+						<div class="small text-muted">市值（收盤價 × 股數）</div>
+						<div th:unless="${summary.allQuotesMissing()}" class="fs-5 app-number"
+							th:text="${@viewFormats.money(summary.marketValue)}">1,391,000</div>
+						<div th:if="${summary.allQuotesMissing()}" class="small text-muted">尚未取得收盤價，暫時無法計算</div>
+					</div>
+					<div class="col-12 small text-warning-emphasis" th:if="${summary.someQuotesMissing()}">
+						<i class="bi bi-exclamation-circle me-1"></i>
+						<span th:text="${summary.quoteMissing}">1</span> 筆未取得收盤價，未計入市值與盈虧（總成本仍包含這幾筆）
+					</div>
+				</div>
+			</div>
+		</div>
+
 		<p class="small text-muted mb-2">
 			<i class="bi bi-info-circle"></i>
 			收盤價取自證交所、櫃買中心公布的最近一個交易日，每 10 分鐘在背景自動更新（重新整理頁面即可看到最新結果）。
+			盈虧已扣除買賣手續費（0.1425%，最低 20 元）與證交稅（一般股票 0.3%、ETF 0.1%）。
 		</p>
 
 		<div class="card app-card">
@@ -36,6 +83,8 @@
 							<th class="text-end">張數</th>
 							<th class="text-end">買進價</th>
 							<th class="text-end">收盤價</th>
+							<th class="text-end">盈虧</th>
+							<th class="text-end">收益率</th>
 							<th class="text-end">操作</th>
 						</tr>
 					</thead>
@@ -85,6 +134,23 @@
 										（<span th:text="${#temporals.format(h.lastPriceDate, 'MM/dd')}">11/19</span>）
 									</div>
 								</th:block>
+							</td>
+							<!--/*
+								盈虧、收益率：取得收盤價才算（紅賺綠虧）；
+								取不到時大字「無法計算」＋小字原因（尚未取得收盤價／近期無成交資料）
+							*/-->
+							<td class="text-end app-number text-nowrap">
+								<span th:if="${h.hasProfit()}" class="fw-semibold" th:classappend="${@viewFormats.pnlClass(h.profit.pnl)}"
+									th:text="${@viewFormats.signedMoney(h.profit.pnl)}">+93,708</span>
+								<th:block th:unless="${h.hasProfit()}">
+									<span class="text-muted">無法計算</span>
+									<div class="small text-muted" th:text="${h.missingReason()}">尚未取得收盤價</div>
+								</th:block>
+							</td>
+							<td class="text-end app-number text-nowrap">
+								<span th:if="${h.hasProfit()}" th:classappend="${@viewFormats.pnlClass(h.profit.returnPct)}"
+									th:text="${@viewFormats.signedPct(h.profit.returnPct)}">+9.36%</span>
+								<span th:unless="${h.hasProfit()}" class="text-muted">無法計算</span>
 							</td>
 							<td class="text-end text-nowrap">
 								<a class="btn btn-sm btn-outline-secondary" th:href="@{/holdings/{id}/edit(id=${h.id})}">

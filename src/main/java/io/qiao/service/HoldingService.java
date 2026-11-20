@@ -11,6 +11,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.qiao.calculation.ProfitCalculator;
+import io.qiao.dto.HoldingListView;
 import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
@@ -32,13 +34,15 @@ public class HoldingService {
 	private final HoldingRepository holdingRepository;
 	private final StockLookupService stockLookupService;
 	private final QuoteCache quoteCache;
+	private final ProfitCalculator profitCalculator;
 	private final Clock clock;
 
 	public HoldingService(HoldingRepository holdingRepository, StockLookupService stockLookupService,
-			QuoteCache quoteCache, Clock clock) {
+			QuoteCache quoteCache, ProfitCalculator profitCalculator, Clock clock) {
 		this.holdingRepository = holdingRepository;
 		this.stockLookupService = stockLookupService;
 		this.quoteCache = quoteCache;
+		this.profitCalculator = profitCalculator;
 		this.clock = clock;
 	}
 
@@ -48,13 +52,22 @@ public class HoldingService {
 	}
 
 	/**
-	 * 清單用：每筆持股加上快取裡的行情。只讀記憶體快取，不會向官方查詢（題目第 3 題要求 3）。
+	 * 清單用：每筆持股加上快取裡的行情與盈虧。只讀記憶體快取，不會向官方查詢（題目第 3 題要求 3）。
 	 */
 	@Transactional(readOnly = true)
 	public List<HoldingView> findAllViews() {
 		return holdingRepository.findAllByOrderByCodeAsc().stream()
-				.map(holding -> HoldingView.of(holding, quoteCache.get(holding.getCode()).orElse(null)))
+				.map(holding -> HoldingView.of(holding, quoteCache.get(holding.getCode()).orElse(null), profitCalculator))
 				.toList();
+	}
+
+	/**
+	 * 清單頁用：每一筆持股＋頁面最上方的總計（第 4 題）。
+	 * 清單和總計用同一份資料算出來，數字一定一致。
+	 */
+	@Transactional(readOnly = true)
+	public HoldingListView findListWithSummary() {
+		return HoldingListView.of(findAllViews());
 	}
 
 	@Transactional(readOnly = true)
