@@ -31,6 +31,13 @@ public class QuoteConfig {
 		return new TpexQuoteClient(restClient(properties.tpexBaseUrl(), properties), objectMapper, clock);
 	}
 
+	/** 新增持股時判斷上市／上櫃（兩邊同時查）；close 會在程式關閉時自動呼叫 */
+	@Bean
+	public StockLookupService stockLookupService(TwseQuoteClient twseQuoteClient, TpexQuoteClient tpexQuoteClient,
+			QuoteProperties properties) {
+		return new StockLookupService(twseQuoteClient, tpexQuoteClient, properties.lookupTimeout());
+	}
+
 	private RestClient restClient(String baseUrl, QuoteProperties properties) {
 		// 一定要設逾時：沒設的話官方網站沒回應時會一直等下去，新增持股就無法在 10 秒內有結果
 		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();

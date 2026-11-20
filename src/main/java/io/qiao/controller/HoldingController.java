@@ -13,6 +13,8 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import io.qiao.dto.HoldingForm;
 import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
+import io.qiao.exception.QuoteUnavailableException;
+import io.qiao.exception.StockNotFoundException;
 import io.qiao.service.HoldingService;
 import jakarta.validation.Valid;
 
@@ -61,9 +63,13 @@ public class HoldingController {
 		Holding saved;
 		try {
 			saved = holdingService.create(form.getCode(), form.getLots(), form.getBuyPrice());
-		} catch (DuplicateCodeException e) {
-			// 代號重複：錯誤顯示在代號欄位旁，資料不儲存
-			bindingResult.rejectValue("code", "duplicate", e.getMessage());
+		} catch (DuplicateCodeException | StockNotFoundException e) {
+			// 代號重複、上市上櫃都查不到：錯誤顯示在代號欄位旁，資料不儲存
+			bindingResult.rejectValue("code", "invalidCode", e.getMessage());
+			return FORM_VIEW;
+		} catch (QuoteUnavailableException e) {
+			// 官方連不上：不是使用者輸入錯誤，顯示在表單上方，資料不儲存
+			bindingResult.reject("quoteUnavailable", QuoteUnavailableException.USER_MESSAGE);
 			return FORM_VIEW;
 		}
 

@@ -3,21 +3,33 @@ package io.qiao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.math.BigDecimal;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.qiao.entity.Holding;
+import io.qiao.entity.Market;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.QuoteUnavailableException;
+import io.qiao.exception.StockNotFoundException;
+import io.qiao.quote.StockLookupService;
+import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 
 /**
  * 持股 Service 測試（H2 記憶體資料庫，Flyway 一樣會建表）。
  * 每個測試都加 @Transactional，結束後自動復原資料，測試之間互不影響。
+ * 查官方行情的 StockLookupService 換成假的（@MockitoBean），測試不會連到證交所、櫃買中心。
  */
 @SpringBootTest
 @Transactional
@@ -28,6 +40,47 @@ class HoldingServiceTest {
 
 	@Autowired
 	private HoldingRepository holdingRepository;
+
+	@MockitoBean
+	private StockLookupService stockLookupService;
+
+	@BeforeEach
+	void setUp() {
+		// 預設：任何代號都查得到，名稱「測試股」、上市、收盤價 100
+		when(stockLookupService.lookup(anyString())).thenAnswer(invocation -> new StockQuote(
+				invocation.getArgument(0), "測試股", Market.TWSE, new BigDecimal("100.00"), LocalDate.of(2026, 11, 19)));
+	}
+
+	@Test
+	void 新增持股_存入官方查到的名稱市場與上次收盤價() {
+		when(stockLookupService.lookup("6488")).thenReturn(new StockQuote(
+				"6488", "環球晶", Market.TPEX, new BigDecimal("490.00"), LocalDate.of(2026, 11, 19)));
+
+		Holding saved = holdingService.create("6488", 1, new BigDecimal("600"));
+
+		assertThat(saved.getName()).isEqualTo("環球晶");
+		assertThat(saved.getMarket()).isEqualTo(Market.TPEX);
+		assertThat(saved.getLastClosePrice()).isEqualByComparingTo("490.00");
+		assertThat(saved.getLastPriceDate()).isEqualTo(LocalDate.of(2026, 11, 19));
+	}
+
+	@Test
+	void 代號在上市上櫃都查不到_不儲存() {
+		when(stockLookupService.lookup("9999")).thenThrow(new StockNotFoundException("9999"));
+
+		assertThatThrownBy(() -> holdingService.create("9999", 1, BigDecimal.TEN))
+				.isInstanceOf(StockNotFoundException.class);
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 官方連不上_不儲存() {
+		when(stockLookupService.lookup("2330")).thenThrow(new QuoteUnavailableException("測試：連不上"));
+
+		assertThatThrownBy(() -> holdingService.create("2330", 1, BigDecimal.TEN))
+				.isInstanceOf(QuoteUnavailableException.class);
+		assertThat(holdingRepository.count()).isZero();
+	}
 
 	@Test
 	void 新增持股_代號去空白並轉大寫() {

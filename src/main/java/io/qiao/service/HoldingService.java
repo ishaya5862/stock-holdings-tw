@@ -13,6 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.QuoteUnavailableException;
+import io.qiao.exception.StockNotFoundException;
+import io.qiao.quote.StockLookupService;
+import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 
 /**
@@ -23,10 +27,12 @@ import io.qiao.repository.HoldingRepository;
 public class HoldingService {
 
 	private final HoldingRepository holdingRepository;
+	private final StockLookupService stockLookupService;
 	private final Clock clock;
 
-	public HoldingService(HoldingRepository holdingRepository, Clock clock) {
+	public HoldingService(HoldingRepository holdingRepository, StockLookupService stockLookupService, Clock clock) {
 		this.holdingRepository = holdingRepository;
+		this.stockLookupService = stockLookupService;
 		this.clock = clock;
 	}
 
@@ -42,24 +48,36 @@ public class HoldingService {
 	}
 
 	/**
-	 * 新增持股。
+	 * 新增持股：先檢查重複，再向官方確認代號存在（並取得名稱、市場別、最近收盤價），最後儲存。
 	 *
-	 * @throws DuplicateCodeException 代號已存在
+	 * 注意：這個方法沒有加 @Transactional。查官方最多要等 9 秒，
+	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；真正寫入時 saveAndFlush 會自己開交易。
+	 *
+	 * @throws DuplicateCodeException     代號已存在
+	 * @throws StockNotFoundException     上市、上櫃都查不到這個代號（資料不儲存）
+	 * @throws QuoteUnavailableException 官方連不上，無法確認代號是否存在（資料不儲存）
 	 */
-	@Transactional
 	public Holding create(String code, Integer lots, BigDecimal buyPrice) {
 		String normalizedCode = normalizeCode(code);
 
-		// 第一道檢查：先查有沒有重複，給使用者清楚的錯誤訊息
+		// 第一道檢查：先查有沒有重複（不用浪費一次官方查詢），給使用者清楚的錯誤訊息
 		if (holdingRepository.existsByCode(normalizedCode)) {
 			throw new DuplicateCodeException(normalizedCode);
 		}
 
+		// 向官方確認代號存在，同時判斷上市／上櫃（查不到或連不上會丟例外，資料就不會儲存）
+		StockQuote quote = stockLookupService.lookup(normalizedCode);
+
 		LocalDateTime now = LocalDateTime.now(clock);
 		Holding holding = new Holding();
 		holding.setCode(normalizedCode);
+		holding.setName(quote.name());
+		holding.setMarket(quote.market());
 		holding.setLots(lots);
 		holding.setBuyPrice(buyPrice);
+		// 順便記下最近收盤價，之後官方連不上時可以顯示「上次收盤價」
+		holding.setLastClosePrice(quote.closePrice());
+		holding.setLastPriceDate(quote.priceDate());
 		holding.setCreatedAt(now);
 		holding.setUpdatedAt(now);
 

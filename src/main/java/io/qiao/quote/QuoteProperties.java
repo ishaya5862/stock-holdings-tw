@@ -14,11 +14,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param tpexBaseUrl    櫃買中心主機（例：https://www.tpex.org.tw），可用環境變數 TPEX_BASE_URL 改掉
  * @param connectTimeout 連線逾時
  * @param readTimeout    讀取逾時
+ * @param lookupTimeout  新增持股時「判斷上市／上櫃」的整體時間上限（題目要求 10 秒內有結果）
  */
 @ConfigurationProperties(prefix = "app.quote")
 public record QuoteProperties(
 		String twseBaseUrl,
 		String tpexBaseUrl,
 		Duration connectTimeout,
-		Duration readTimeout) {
+		Duration readTimeout,
+		Duration lookupTimeout) {
 }

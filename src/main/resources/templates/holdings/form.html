@@ -24,6 +24,12 @@
 					<form method="post" novalidate th:object="${holdingForm}"
 						th:action="${isEdit} ? @{/holdings/{id}(id=${holdingId})} : @{/holdings}">
 
+						<!-- 不屬於某個欄位的錯誤（例如官方行情連不上） -->
+						<div th:if="${#fields.hasGlobalErrors()}" class="alert alert-warning" role="alert">
+							<i class="bi bi-wifi-off me-1"></i>
+							<span th:each="err : ${#fields.globalErrors()}" th:text="${err}">行情來源暫時無法連線，請稍後再試</span>
+						</div>
+
 						<div class="mb-3">
 							<label for="code" class="form-label">股票代號</label>
 							<!-- 修改時代號不能改：readonly（仍會送出，但伺服器不採用） -->
@@ -52,8 +58,14 @@
 							</div>
 						</div>
 
+						<p class="form-text" th:unless="${isEdit}">
+							新增時會向證交所、櫃買中心確認代號並自動判斷上市／上櫃，最多約 10 秒。
+						</p>
+
 						<div class="d-flex gap-2">
-							<button type="submit" class="btn btn-primary">
+							<!-- 送出後按鈕變成「查詢中…」並停用，避免使用者等待時重複按 -->
+							<button type="submit" class="btn btn-primary"
+								onclick="setTimeout(() => { this.disabled = true; this.innerText = '查詢中…'; }, 0);">
 								<i class="bi bi-check-lg me-1"></i><span th:text="${isEdit} ? '儲存修改' : '新增'">新增</span>
 							</button>
 							<a class="btn btn-outline-secondary" th:href="@{/holdings}">取消</a>
