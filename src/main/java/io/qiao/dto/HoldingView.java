@@ -8,6 +8,7 @@ import io.qiao.calculation.ProfitCalculator;
 import io.qiao.calculation.ProfitResult;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
+import io.qiao.entity.Stock;
 import io.qiao.quote.QuoteCache;
 import io.qiao.quote.QuoteStatus;
 import io.qiao.quote.StockQuote;
@@ -18,7 +19,7 @@ import io.qiao.quote.StockQuote;
  *
  * @param closePrice     目前收盤價（只有 quoteStatus = OK 時有值）
  * @param priceDate      目前收盤價的日期（只有 OK 時有值）
- * @param lastClosePrice 上次成功取得的收盤價（資料庫），取不到行情時顯示「上次收盤價」用
+ * @param lastClosePrice 上次成功取得的收盤價（資料庫 stocks），取不到行情時顯示「上次收盤價」用
  * @param totalCost      總成本（買進金額 + 買進手續費）；取不到收盤價也一定有值（總計要算進去）
  * @param profit         盈虧計算結果；只有取得收盤價時才有值，否則 null（畫面顯示「無法計算」）
  */
@@ -38,11 +39,13 @@ public record HoldingView(
 		ProfitResult profit) {
 
 	/**
-	 * 由持股 + 快取組成，並計算盈虧。
+	 * 由持股 + 股票資訊 + 快取組成，並計算盈虧。
 	 * 快取沒有這檔 → 這次啟動後還沒查過（更新中）。
 	 * 只有「查詢成功（OK）」才算盈虧；更新中、未取得、近期無成交資料都當成取不到收盤價。
+	 *
+	 * @param stock 股票資訊（stocks）；外鍵保證一定有，但仍容許 null（防禦性寫法）
 	 */
-	public static HoldingView of(Holding holding, QuoteCache.Entry cacheEntry, ProfitCalculator calculator) {
+	public static HoldingView of(Holding holding, Stock stock, QuoteCache.Entry cacheEntry, ProfitCalculator calculator) {
 		QuoteStatus status = cacheEntry == null ? QuoteStatus.UPDATING : cacheEntry.status();
 		StockQuote quote = cacheEntry == null ? null : cacheEntry.quote();
 		BigDecimal closePrice = quote != null ? quote.closePrice() : null;
@@ -59,16 +62,16 @@ public record HoldingView(
 		return new HoldingView(
 				holding.getId(),
 				holding.getCode(),
-				// 新增或排程補資料時，名稱、市場以官方為準；快取有值就用快取（最新）
-				quote != null ? quote.name() : holding.getName(),
-				quote != null ? quote.market() : holding.getMarket(),
+				// 名稱、市場以官方為準：快取有值就用快取（這次啟動後查到的最新資料），否則用股票表
+				quote != null ? quote.name() : (stock != null ? stock.getName() : null),
+				quote != null ? quote.market() : (stock != null ? stock.getMarket() : null),
 				holding.getLots(),
 				holding.getBuyPrice(),
 				status,
 				closePrice,
 				quote != null ? quote.priceDate() : null,
-				holding.getLastClosePrice(),
-				holding.getLastPriceDate(),
+				stock != null ? stock.getLastClosePrice() : null,
+				stock != null ? stock.getLastPriceDate() : null,
 				totalCost,
 				profit);
 	}

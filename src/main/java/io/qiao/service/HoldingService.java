@@ -5,7 +5,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
+import java.util.Map;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -15,6 +15,7 @@ import io.qiao.calculation.ProfitCalculator;
 import io.qiao.dto.HoldingListView;
 import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
+import io.qiao.entity.Stock;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
@@ -27,19 +28,24 @@ import io.qiao.repository.HoldingRepository;
 /**
  * 持股的新增、修改、刪除、查詢。
  * 網頁（第 2 題）和 API（第 5 題）共用這一層，規則只寫一次。
+ *
+ * 持股（holdings）只存使用者會改的欄位；股票名稱、市場別、上次收盤價在 stocks（StockService 負責寫入）。
  */
 @Service
 public class HoldingService {
 
 	private final HoldingRepository holdingRepository;
+	private final StockService stockService;
 	private final StockLookupService stockLookupService;
 	private final QuoteCache quoteCache;
 	private final ProfitCalculator profitCalculator;
 	private final Clock clock;
 
-	public HoldingService(HoldingRepository holdingRepository, StockLookupService stockLookupService,
-			QuoteCache quoteCache, ProfitCalculator profitCalculator, Clock clock) {
+	public HoldingService(HoldingRepository holdingRepository, StockService stockService,
+			StockLookupService stockLookupService, QuoteCache quoteCache, ProfitCalculator profitCalculator,
+			Clock clock) {
 		this.holdingRepository = holdingRepository;
+		this.stockService = stockService;
 		this.stockLookupService = stockLookupService;
 		this.quoteCache = quoteCache;
 		this.profitCalculator = profitCalculator;
@@ -52,12 +58,17 @@ public class HoldingService {
 	}
 
 	/**
-	 * 清單用：每筆持股加上快取裡的行情與盈虧。只讀記憶體快取，不會向官方查詢（題目第 3 題要求 3）。
+	 * 清單用：每筆持股＋股票資訊＋快取裡的行情＋盈虧。
+	 * 只讀資料庫與記憶體快取，不會向官方查詢（題目第 3 題要求 3）。
+	 * 股票資訊一次查出所有代號再配對，查詢次數固定 2 次，不會每一筆持股各查一次。
 	 */
 	@Transactional(readOnly = true)
 	public List<HoldingView> findAllViews() {
-		return holdingRepository.findAllByOrderByCodeAsc().stream()
-				.map(holding -> HoldingView.of(holding, quoteCache.get(holding.getCode()).orElse(null), profitCalculator))
+		List<Holding> holdings = holdingRepository.findAllByOrderByCodeAsc();
+		Map<String, Stock> stocks = stockService.findByCodes(holdings.stream().map(Holding::getCode).toList());
+		return holdings.stream()
+				.map(holding -> HoldingView.of(holding, stocks.get(holding.getCode()),
+						quoteCache.get(holding.getCode()).orElse(null), profitCalculator))
 				.toList();
 	}
 
@@ -79,8 +90,10 @@ public class HoldingService {
 	/**
 	 * 新增持股：先檢查重複，再向官方確認代號存在（並取得名稱、市場別、最近收盤價），最後儲存。
 	 *
+	 * 寫入順序：先寫 stocks（股票資訊），再寫 holdings（外鍵規定持股的代號一定要在股票表裡）。
+	 *
 	 * 注意：這個方法沒有加 @Transactional。查官方最多要等 9 秒，
-	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；真正寫入時 saveAndFlush 會自己開交易。
+	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；兩次寫入各自開交易。
 	 *
 	 * @throws DuplicateCodeException     代號已存在
 	 * @throws StockNotFoundException     上市、上櫃都查不到這個代號（資料不儲存）
@@ -100,22 +113,19 @@ public class HoldingService {
 		LocalDateTime now = LocalDateTime.now(clock);
 		Holding holding = new Holding();
 		holding.setCode(normalizedCode);
-		holding.setName(quote.name());
-		holding.setMarket(quote.market());
 		holding.setLots(lots);
 		holding.setBuyPrice(buyPrice);
-		// 順便記下最近收盤價，之後官方連不上時可以顯示「上次收盤價」
-		holding.setLastClosePrice(quote.closePrice());
-		holding.setLastPriceDate(quote.priceDate());
 		holding.setCreatedAt(now);
 		holding.setUpdatedAt(now);
 
 		Holding saved;
 		try {
+			// 股票資訊（名稱、市場、上次收盤價）寫到 stocks；已有這個代號就只更新
+			stockService.recordQuote(quote);
 			// saveAndFlush：立刻寫入資料庫，讓 UNIQUE 限制的錯誤在這裡就發生，才能轉成 DuplicateCodeException
 			saved = holdingRepository.saveAndFlush(holding);
 		} catch (DataIntegrityViolationException e) {
-			// 第二道檢查（最後防線）：兩個人「同時」新增同一個代號時，第一道檢查都會通過，由資料庫的 UNIQUE 限制擋下
+			// 第二道檢查（最後防線）：兩個人「同時」新增同一個代號時，第一道檢查都會通過，由資料庫的 UNIQUE／主鍵限制擋下
 			throw new DuplicateCodeException(normalizedCode);
 		}
 
@@ -126,6 +136,7 @@ public class HoldingService {
 
 	/**
 	 * 修改持股：只能改張數和買進價，代號不能改（與 App 1.0 API 規格一致）。
+	 * 只會寫到 holdings；股票資訊在 stocks，背景排程同時寫行情也不會互相覆寫。
 	 *
 	 * @throws HoldingNotFoundException 找不到這筆持股
 	 */
@@ -140,7 +151,7 @@ public class HoldingService {
 	}
 
 	/**
-	 * 刪除持股。
+	 * 刪除持股。股票資訊（stocks）保留：其他功能（Part B 多筆買賣紀錄）可能還會用到，排程也只查有人持有的股票。
 	 *
 	 * @throws HoldingNotFoundException 找不到這筆持股
 	 */
@@ -148,33 +159,8 @@ public class HoldingService {
 	public void delete(Long id) {
 		Holding holding = findById(id);
 		holdingRepository.delete(holding);
-		// 同一個代號只會有一筆持股，刪掉後快取也不需要了（排程只會查還在的持股）
+		// 同一個代號只會有一筆持股，刪掉後快取也不需要了
 		quoteCache.remove(holding.getCode());
-	}
-
-	/**
-	 * 背景排程查到行情後呼叫：
-	 * 1. 補上或更新名稱與市場：第 2 題時新增、還沒有名稱或市場的持股；
-	 *    或上櫃轉上市（或反過來）時，代號不變但市場改變。
-	 * 2. 更新「上次收盤價」（只在數字或日期有變時才寫入）。
-	 * 不更新 updated_at：那個欄位代表「使用者最後修改的時間」，排程更新行情不算使用者修改。
-	 * 持股在排程查詢期間被刪除時，直接略過。
-	 */
-	@Transactional
-	public void recordQuote(Long holdingId, StockQuote quote) {
-		holdingRepository.findById(holdingId).ifPresent(holding -> {
-			if (holding.getName() == null || holding.getMarket() != quote.market()) {
-				holding.setName(quote.name());
-				holding.setMarket(quote.market());
-			}
-			boolean priceChanged = holding.getLastClosePrice() == null
-					|| holding.getLastClosePrice().compareTo(quote.closePrice()) != 0
-					|| !Objects.equals(holding.getLastPriceDate(), quote.priceDate());
-			if (priceChanged) {
-				holding.setLastClosePrice(quote.closePrice());
-				holding.setLastPriceDate(quote.priceDate());
-			}
-		});
 	}
 
 	/**
