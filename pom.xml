@@ -67,7 +67,7 @@
 		</dependency>
 
 		<!--
-			Docker Compose 整合：執行 mvnw spring-boot:run 時，會自動依 compose.yml 啟動 MySQL，
+			Docker Compose 整合：執行 mvnw spring-boot:run 時，會自動依 docker-compose.yml 啟動 MySQL，
 			並等資料庫準備好才啟動程式 → 達成題目「一行指令啟動」。
 			打包成 jar 或跑測試時不會啟用。
 		-->
