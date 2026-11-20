@@ -32,11 +32,19 @@
 
 						<div class="mb-3">
 							<label for="code" class="form-label">股票代號</label>
-							<!-- 修改時代號不能改：readonly（仍會送出，但伺服器不採用） -->
+							<!--/*
+								修改時代號不能改：readonly（仍會送出，但伺服器不採用）。
+								data-pattern / data-message 取自後端 StockCodes（由 HoldingController 放進 model），前端即時檢查和後端驗證用同一份規則。
+								不用 ${T(...)} 直接讀 Java 類別：Thymeleaf 3.1 為了安全禁止在模板裡存取靜態類別。
+								code-feedback 一定存在（沒有錯誤時是空的），讓前端 JavaScript 可以即時填入錯誤訊息。
+							*/-->
 							<input type="text" class="form-control app-number" id="code" th:field="*{code}"
 								th:readonly="${isEdit}" th:classappend="${#fields.hasErrors('code')} ? 'is-invalid'"
-								placeholder="例：2330、0050、6488" autocomplete="off">
-							<div class="invalid-feedback" th:errors="*{code}">錯誤訊息</div>
+								th:attr="data-pattern=${codePattern},data-message=${codeMessage}"
+								placeholder="例：2330、0050、00679B" autocomplete="off" maxlength="7" autocapitalize="characters">
+							<div id="code-feedback" class="invalid-feedback"
+								th:text="${#fields.hasErrors('code')} ? ${#strings.listJoin(#fields.errors('code'), '；')} : ''">錯誤訊息</div>
+							<div class="form-text" th:unless="${isEdit}">4～6 位數字，最後可加 1 個英文字母（例：00679B）。</div>
 							<div class="form-text" th:if="${isEdit}">代號不能修改；要換股票請刪除後重新新增。</div>
 						</div>
 
@@ -63,9 +71,8 @@
 						</p>
 
 						<div class="d-flex gap-2">
-							<!-- 送出後按鈕變成「查詢中…」並停用，避免使用者等待時重複按 -->
-							<button type="submit" class="btn btn-primary"
-								onclick="setTimeout(() => { this.disabled = true; this.innerText = '查詢中…'; }, 0);">
+							<!--/* 送出後按鈕變成「查詢中…」並停用（寫在 js/holding-form.js：代號格式檢查通過才停用） */-->
+							<button type="submit" class="btn btn-primary">
 								<i class="bi bi-check-lg me-1"></i><span th:text="${isEdit} ? '儲存修改' : '新增'">新增</span>
 							</button>
 							<a class="btn btn-outline-secondary" th:href="@{/holdings}">取消</a>
@@ -77,5 +84,6 @@
 	</main>
 
 	<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+	<script th:src="@{/js/holding-form.js}"></script>
 </body>
 </html>

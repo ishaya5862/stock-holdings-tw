@@ -209,6 +209,31 @@ class HoldingControllerTest {
 	}
 
 	@Test
+	void 代號格式錯誤_後端擋下_就算前端檢查被繞過也不儲存() throws Exception {
+		for (String badCode : new String[] { "台積電", "233", "1234567", "A2330", "2330AB" }) {
+			mockMvc.perform(post("/holdings").param("code", badCode).param("lots", "1").param("buyPrice", "10"))
+					.andExpect(status().isOk())
+					.andExpect(content().string(containsString("股票代號為 4～6 位數字，最後可加 1 個英文字母")));
+		}
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 代號含英文字母的ETF可以新增_小寫自動轉大寫() throws Exception {
+		mockMvc.perform(post("/holdings").param("code", "00679b").param("lots", "3").param("buyPrice", "28.5"))
+				.andExpect(redirectedUrl("/holdings"));
+
+		assertThat(holdingRepository.existsByCode("00679B")).isTrue();
+	}
+
+	@Test
+	void 新增頁帶有前後端共用的代號規則() throws Exception {
+		mockMvc.perform(get("/holdings/new"))
+				.andExpect(content().string(containsString("data-pattern=\"^[0-9]{4,6}[A-Za-z]?$\"")))
+				.andExpect(content().string(containsString("js/holding-form.js")));
+	}
+
+	@Test
 	void 代號空白_顯示錯誤() throws Exception {
 		mockMvc.perform(post("/holdings").param("code", " ").param("lots", "1").param("buyPrice", "10"))
 				.andExpect(status().isOk())
