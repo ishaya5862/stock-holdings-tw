@@ -1,6 +1,7 @@
 package io.qiao.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -10,21 +11,35 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.math.BigDecimal;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.qiao.entity.Holding;
+import io.qiao.entity.Market;
+import io.qiao.exception.QuoteUnavailableException;
+import io.qiao.exception.StockNotFoundException;
+import io.qiao.quote.QuoteCache;
+import io.qiao.quote.StockLookupService;
+import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 import io.qiao.service.HoldingService;
 
 /**
  * 持股網頁測試：用 MockMvc 模擬瀏覽器送出表單，確認驗證錯誤會顯示在畫面上、資料不會被儲存。
+ * 查官方行情的 StockLookupService 換成假的（@MockitoBean），測試不會連網。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -39,6 +54,83 @@ class HoldingControllerTest {
 
 	@Autowired
 	private HoldingRepository holdingRepository;
+
+	@MockitoBean
+	private StockLookupService stockLookupService;
+
+	@Autowired
+	private QuoteCache quoteCache;
+
+	@Test
+	void 清單收盤價_查詢成功_顯示收盤價與日期() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000")); // 新增時查到的行情會直接放進快取
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("1,100.00")))
+				.andExpect(content().string(containsString("11/19")))
+				// 反向檢查：查詢成功時不應出現其他狀態的文字（避免文字其實來自 HTML 註解而誤判通過）
+				.andExpect(content().string(not(containsString("未取得"))))
+				.andExpect(content().string(not(containsString("更新中"))));
+	}
+
+	@Test
+	void 清單收盤價_查詢失敗_顯示未取得與上次收盤價_整頁正常() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000"));
+		quoteCache.putUnavailable("2330", LocalDateTime.of(2026, 11, 20, 14, 0));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("未取得")))
+				.andExpect(content().string(containsString("上次收盤價")))
+				.andExpect(content().string(containsString("1,100.00")));
+	}
+
+	@Test
+	void 清單收盤價_啟動後還沒查過_顯示更新中() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000"));
+		quoteCache.remove("2330"); // 模擬伺服器剛重開、排程還沒輪到
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("更新中")));
+	}
+
+	@BeforeEach
+	void setUp() {
+		// 預設：任何代號都查得到
+		when(stockLookupService.lookup(anyString())).thenAnswer(invocation -> new StockQuote(
+				invocation.getArgument(0), "台積電", Market.TWSE, new BigDecimal("1100.00"), LocalDate.of(2026, 11, 19)));
+	}
+
+	@Test
+	void 新增查無此股票_代號欄位顯示錯誤且不儲存() throws Exception {
+		when(stockLookupService.lookup("9999")).thenThrow(new StockNotFoundException("9999"));
+
+		mockMvc.perform(post("/holdings").param("code", "9999").param("lots", "1").param("buyPrice", "10"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("查無股票代號 9999")));
+
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 新增時官方連不上_顯示稍後再試且不儲存() throws Exception {
+		when(stockLookupService.lookup("2330")).thenThrow(new QuoteUnavailableException("測試：連不上"));
+
+		mockMvc.perform(post("/holdings").param("code", "2330").param("lots", "1").param("buyPrice", "1000"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("行情來源暫時無法連線，請稍後再試")));
+
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 新增後清單顯示名稱與市場() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("台積電")))
+				.andExpect(content().string(containsString("上市")));
+	}
 
 	@Test
 	void 清單頁可以開啟() throws Exception {
