@@ -30,6 +30,9 @@ public enum ApiErrorCode {
 	 */
 	UPGRADE_REQUIRED(HttpStatus.CONFLICT),
 
+	/** 2.0：同一檔持股正在被另一個請求寫入，等鎖超過 3 秒（C3-2）；稍後再試即可 */
+	HOLDING_BUSY(HttpStatus.CONFLICT),
+
 	/** 2.0：App 2.0（X-Client: app2）呼叫了 v1，請改用 /api/v2（M4，防止誤用） */
 	USE_API_V2(HttpStatus.BAD_REQUEST),
 

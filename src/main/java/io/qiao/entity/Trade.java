@@ -17,6 +17,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * 交易紀錄（對應資料表 trades，建表 SQL 見 db/migration/V5）。2.0 第 6 題。
@@ -25,7 +26,8 @@ import jakarta.persistence.Table;
  * 和持股用 holdingId 對應（不用 JPA 關聯），和 Holding、Stock 的做法一致：
  * 避免關閉 open-in-view 後讀到未載入資料的錯誤，查詢次數也固定。
  *
- * version 欄位（資料庫已有）暫不對應：C3 設計「手機與電腦同時操作」時才加上 @Version（C2-5 決定）。
+ * version（@Version，C3-5）：修改、刪除一筆交易時，用戶端要帶上它看到的版本號；
+ * 和資料庫不同 → 代表另一個裝置已經改過這一筆，回 409，避免後送出的默默蓋掉先送出的（遺失更新）。
  */
 @Entity
 @Table(name = "trades")
@@ -59,6 +61,11 @@ public class Trade {
 
 	@Column(nullable = false, precision = 10, scale = 2)
 	private BigDecimal price;
+
+	/** 版本號：每次修改自動 +1 */
+	@Version
+	@Column(nullable = false)
+	private Long version;
 
 	/** 建立、修改時間由 Service 用台北時區的 Clock 設定，不用主機時間 */
 	@Column(name = "created_at", nullable = false)
@@ -124,6 +131,20 @@ public class Trade {
 
 	public boolean isDateEstimated() {
 		return dateEstimated;
+	}
+
+	/**
+	 * 修改交易日期。使用者自己填了日期 → 不再是推估（D3）。
+	 */
+	public void setTradeDate(LocalDate tradeDate) {
+		if (!tradeDate.equals(this.tradeDate)) {
+			this.dateEstimated = false;
+		}
+		this.tradeDate = tradeDate;
+	}
+
+	public Long getVersion() {
+		return version;
 	}
 
 	public Long getShares() {

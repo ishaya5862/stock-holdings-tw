@@ -49,6 +49,7 @@ public class HoldingService {
 
 	private final HoldingRepository holdingRepository;
 	private final TradeRepository tradeRepository;
+	private final HoldingLock holdingLock;
 	private final StockService stockService;
 	private final StockLookupService stockLookupService;
 	private final QuoteCache quoteCache;
@@ -56,11 +57,12 @@ public class HoldingService {
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
-	public HoldingService(HoldingRepository holdingRepository, TradeRepository tradeRepository, StockService stockService,
-			StockLookupService stockLookupService, QuoteCache quoteCache, PositionCalculator positionCalculator,
-			TransactionTemplate transactionTemplate, Clock clock) {
+	public HoldingService(HoldingRepository holdingRepository, TradeRepository tradeRepository, HoldingLock holdingLock,
+			StockService stockService, StockLookupService stockLookupService, QuoteCache quoteCache,
+			PositionCalculator positionCalculator, TransactionTemplate transactionTemplate, Clock clock) {
 		this.holdingRepository = holdingRepository;
 		this.tradeRepository = tradeRepository;
+		this.holdingLock = holdingLock;
 		this.stockService = stockService;
 		this.stockLookupService = stockLookupService;
 		this.quoteCache = quoteCache;
@@ -175,12 +177,14 @@ public class HoldingService {
 	/** 代號已有持股列：還有股數 → 重複；已全部賣光 → 沿用這一列，加一筆買進（C4-5） */
 	private Holding rebuySoldOut(Holding holding, Integer lots, BigDecimal buyPrice, LocalDateTime now) {
 		return transactionTemplate.execute(status -> {
-			if (currentShares(holding.getId()) > 0) {
-				throw new DuplicateCodeException(holding.getCode());
+			// 鎖住後才判斷股數：避免同時有 2.0 的買進進來（C3，和交易服務同一套鎖）
+			Holding locked = holdingLock.byId(holding.getId(), () -> new HoldingNotFoundException(holding.getId()));
+			if (currentShares(locked.getId()) > 0) {
+				throw new DuplicateCodeException(locked.getCode());
 			}
-			tradeRepository.save(Trade.v1Buy(holding.getId(), lots, buyPrice, now));
-			holding.setUpdatedAt(now);
-			return holdingRepository.save(holding);
+			tradeRepository.save(Trade.v1Buy(locked.getId(), lots, buyPrice, now));
+			locked.setUpdatedAt(now);
+			return locked;
 		});
 	}
 
@@ -193,7 +197,8 @@ public class HoldingService {
 	 */
 	@Transactional
 	public Holding update(Long id, Integer lots, BigDecimal buyPrice) {
-		Holding holding = findById(id);
+		// 先鎖住（C3）：1.0 修改和 2.0 的買賣同時發生時排隊，讀到的一定是最新的交易紀錄
+		Holding holding = holdingLock.byId(id, () -> new HoldingNotFoundException(id));
 		HoldingView view = findViewById(id);
 		if (!view.v1Representable()) {
 			throw new UpgradeRequiredException(holding.getCode(), "修改", view.v1Limits());
@@ -218,7 +223,7 @@ public class HoldingService {
 	 */
 	@Transactional
 	public void delete(Long id) {
-		Holding holding = findById(id);
+		Holding holding = holdingLock.byId(id, () -> new HoldingNotFoundException(id)); // 先鎖住（C3）
 		HoldingView view = findViewById(id); // 0 股 → 找不到（1.0 看不到）
 		if (tradesOf(id).size() != 1) {
 			throw new UpgradeRequiredException(holding.getCode(), "刪除", view.v1Limits());

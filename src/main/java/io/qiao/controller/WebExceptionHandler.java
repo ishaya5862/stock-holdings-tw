@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.support.RequestContextUtils;
 
+import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.UpgradeRequiredException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,6 +35,13 @@ public class WebExceptionHandler {
 	@ExceptionHandler(UpgradeRequiredException.class)
 	public String handleUpgradeRequired(UpgradeRequiredException e, HttpServletRequest request) {
 		RequestContextUtils.getOutputFlashMap(request).put("errorMessage", e.getMessage());
+		return "redirect:/holdings";
+	}
+
+	/** 2.0：同一檔正在被另一個裝置寫入，等鎖超過 3 秒 → 回清單請稍後再試（C3-2） */
+	@ExceptionHandler(HoldingBusyException.class)
+	public String handleBusy(HttpServletRequest request) {
+		RequestContextUtils.getOutputFlashMap(request).put("errorMessage", HoldingBusyException.USER_MESSAGE);
 		return "redirect:/holdings";
 	}
 }

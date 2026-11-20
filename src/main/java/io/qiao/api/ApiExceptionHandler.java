@@ -19,6 +19,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import com.fasterxml.jackson.databind.JsonMappingException;
 
 import io.qiao.exception.DuplicateCodeException;
+import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
@@ -64,6 +65,13 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(UpgradeRequiredException.class)
 	public ResponseEntity<ApiErrorResponse> handleUpgradeRequired(UpgradeRequiredException e) {
 		return error(ApiErrorCode.UPGRADE_REQUIRED, e.getMessage());
+	}
+
+	/** 2.0：等鎖超過 3 秒（例如手機與電腦同時操作同一檔）→ 409，App 1.0 會顯示「資料正在更新，請稍後再試」 */
+	@ExceptionHandler(HoldingBusyException.class)
+	public ResponseEntity<ApiErrorResponse> handleHoldingBusy(HoldingBusyException e) {
+		log.warn("等鎖逾時：{}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+		return error(ApiErrorCode.HOLDING_BUSY, HoldingBusyException.USER_MESSAGE);
 	}
 
 	/** 2.0：App 2.0 呼叫了 v1（M4） */

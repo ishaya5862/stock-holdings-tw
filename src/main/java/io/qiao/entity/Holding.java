@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * 持股（對應資料表 holdings，建表 SQL 見 db/migration）。每一檔股票一筆。
@@ -20,7 +21,9 @@ import jakarta.persistence.Table;
  * 持股、股票、交易用「代號／holdingId」對應，程式裡由 Service 配對，不用 JPA 關聯，
  * 避免關閉 open-in-view 後在畫面上讀到未載入資料的錯誤（LazyInitializationException），查詢次數也固定。
  *
- * version 欄位（V5 已加）暫不對應：C3 設計「手機與電腦同時操作」時才加上 @Version（C2-5 決定）。
+ * 手機與電腦同時操作（第 6 題 C3）：寫入交易前先用 SELECT … FOR UPDATE 鎖住這一列（悲觀鎖），同一檔的寫入一定排隊。
+ * version（@Version）：這檔有任何交易異動都會更新 updatedAt，Hibernate 自動把版本 +1（C3-9），
+ * 用戶端可以用它判斷「這檔資料變了沒」；因為一定先鎖再讀，不會發生版本衝突。
  */
 @Entity
 @Table(name = "holdings")
@@ -40,6 +43,11 @@ public class Holding {
 
 	@Column(name = "updated_at", nullable = false)
 	private LocalDateTime updatedAt;
+
+	/** 版本號（V5 加的欄位）：每次異動自動 +1 */
+	@Version
+	@Column(nullable = false)
+	private Long version;
 
 	public Long getId() {
 		return id;
@@ -67,5 +75,9 @@ public class Holding {
 
 	public void setUpdatedAt(LocalDateTime updatedAt) {
 		this.updatedAt = updatedAt;
+	}
+
+	public Long getVersion() {
+		return version;
 	}
 }
