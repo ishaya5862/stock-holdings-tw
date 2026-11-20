@@ -2,6 +2,7 @@ package io.qiao.calculation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 
 import org.springframework.stereotype.Component;
 
@@ -114,6 +115,19 @@ public class ProfitCalculator {
 	public BigDecimal tax(String code, BigDecimal sellAmount) {
 		BigDecimal rate = isEtf(code) ? ETF_TAX_RATE : STOCK_TAX_RATE;
 		return sellAmount.multiply(rate).setScale(0, RoundingMode.DOWN);
+	}
+
+	/**
+	 * 證交稅（預留「交易日期」參數，2.0 的 PositionCalculator 使用）。
+	 *
+	 * C1-3 決定：先加參數、規則不變（結果和 tax(code, sellAmount) 相同）。
+	 * Part B 第 7 題回報二（債券 ETF 證交稅停徵，期限 2026-12-31、延長案待三讀）要依「賣出日期」判斷時，
+	 * 只改這裡的規則，計算核心與呼叫端都不用再改參數。
+	 *
+	 * @param tradeDate 賣出日期（目前未使用）
+	 */
+	public BigDecimal tax(String code, BigDecimal sellAmount, LocalDate tradeDate) {
+		return tax(code, sellAmount);
 	}
 
 	/**
