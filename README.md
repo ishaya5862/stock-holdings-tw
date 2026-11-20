@@ -459,7 +459,7 @@ src/main/java/io/qiao/
 ├── api/          給手機 App 1.0 的 JSON API（/api/v1）：請求／回應格式、統一錯誤格式 {"error":{...}}
 ├── calculation/  盈虧計算（ProfitCalculator 單筆、PortfolioSummary 總計、2.0 PositionCalculator 依交易紀錄重算），不依賴資料庫與網路
 ├── config/       設定（時區 Clock 等）
-├── controller/   接收網頁請求，決定回傳哪個畫面（含網頁的統一例外處理、數字格式 ViewFormats）
+├── controller/   接收網頁請求，決定回傳哪個畫面（含網頁的統一例外處理、數字格式 ViewFormats；2.0 新網頁 V2PageController、V2Formats）
 ├── dto/          表單資料（HoldingForm）、清單顯示資料（HoldingView、HoldingListView）
 ├── exception/    自訂例外（代號重複、找不到持股、查無股票、行情無法取得；2.0 的賣超、版本衝突、等鎖逾時、需要更新 App 等）
 ├── quote/        官方行情：證交所／櫃買中心查詢、判斷上市上櫃、快取、休市日
@@ -470,9 +470,9 @@ src/main/java/io/qiao/
 src/main/resources/
 ├── db/migration/ Flyway 建表 SQL
 ├── holidays/     休市日備援資料（官方原始回應）
-├── templates/    Thymeleaf 頁面（fragments/ 為共用版型）
+├── templates/    Thymeleaf 頁面（fragments/ 為第一版共用版型；v2/ 為 2.0 新網頁：總覽、明細）
 ├── messages.properties  表單型別錯誤的中文訊息
-├── static/       CSS、JS（js/holding-form.js：代號即時檢查與防止重複送出；js/holding-list.js：刪除確認）
+├── static/       CSS、JS（js/holding-form.js：代號即時檢查與防止重複送出；js/holding-list.js：刪除確認；css/v2.css、js/v2-page.js：2.0 新網頁）
 └── application.properties
 docker-compose.yml  MySQL（Docker Compose）
 screenshots/        App 畫面截圖
@@ -487,7 +487,7 @@ screenshots/        App 畫面截圖
 | 第 3 題：串接官方行情 | ✅ |
 | 第 4 題：算盈虧，並寫單元測試 | ✅ |
 | 第 5 題：給手機 App 用的 API | ✅ |
-| 第 6 題：2.0 版（零股、多次買進、部分賣出） | 🔶 製作中：計算核心、交易紀錄資料表與 1.0 資料轉換、1.0 介面改由交易紀錄計算、交易服務（含同時操作）、2.0 讀取與寫入 API（`/api/v2`）、防止重送（`Idempotency-Key`）已完成；新網頁製作中 |
+| 第 6 題：2.0 版（零股、多次買進、部分賣出） | 🔶 製作中：計算核心、交易紀錄資料表與 1.0 資料轉換、1.0 介面改由交易紀錄計算、交易服務（含同時操作）、2.0 讀取與寫入 API（`/api/v2`）、防止重送（`Idempotency-Key`）、新網頁的總覽與明細（`/v2`）已完成；新網頁的買賣、修改、刪除製作中 |
 
 > v1.0.0 為 Part B 發下時的進度快照（依題目規定「不管做到哪裡都先打 v1.0.0」），當時第 3 題只完成查詢與解析。
 > 以下都在 v1.0.0 之後完成：第 3 題其餘部分、第 3 題修正（股票資訊拆到 `stocks` 表，避免背景排程覆寫使用者的修改）、第 4 題、第 5 題，以及第 2 題的修正（代號全形轉半形、防止重複送出）。

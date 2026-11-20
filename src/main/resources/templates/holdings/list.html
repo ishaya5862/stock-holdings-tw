@@ -14,11 +14,12 @@
 
 		<div th:replace="~{fragments/layout :: flash}"></div>
 
-		<!--/* 2.0（第 6 題 C4-8、N-d）：第一版網頁保留，提示已推出 2.0。新網頁完成後（C9）改成連結 */-->
+		<!--/* 2.0（第 6 題 C4-8、N-d）：第一版網頁保留，提示已推出 2.0，並連到新網頁（C8） */-->
 		<div class="alert alert-info d-flex align-items-start" role="note" id="v2-banner">
 			<i class="bi bi-stars me-2 fs-5"></i>
 			<div>
 				<strong>持股記帳 2.0 已推出：</strong>支援零股（用「股」記）、同一檔分多次買進、賣出一部分。
+				<a class="alert-link ms-1" th:href="@{/v2}">前往 2.0 網頁</a>
 				<div class="small">這個頁面是第一版（以「張」顯示）；有零股、多次買進或賣出紀錄的持股，請用 2.0 修改或刪除。</div>
 			</div>
 		</div>

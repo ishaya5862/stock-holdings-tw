@@ -1,11 +1,14 @@
 package io.qiao.api.v2;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.stream.IntStream;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.qiao.calculation.TradeLine;
 import io.qiao.entity.Trade;
+import io.qiao.service.PositionQueryService.PositionView;
 
 /**
  * App 2.0 的「交易物件」（GET /api/v2/holdings/{code}/trades）。第 6 題 C5-6 a。
@@ -42,6 +45,22 @@ public record TradeV2Response(
 		@JsonProperty("realized_pnl") String realizedPnl,
 		@JsonProperty("shares_after") Long sharesAfter,
 		@JsonProperty("version") Long version) {
+
+	/**
+	 * 一檔持股的交易明細（API 的 GET /holdings/{code}/trades 與新網頁的明細頁共用，C8-1 a）。
+	 * 資料異常、算不出來時照樣列出原始交易，使用者才能找出並修正錯的那一筆（朋友回饋 1-1 a）。
+	 */
+	public static List<TradeV2Response> listOf(PositionView view) {
+		List<Trade> trades = view.trades();
+		if (view.hasDataError()) {
+			return trades.stream().map(TradeV2Response::raw).toList();
+		}
+		List<TradeLine> lines = view.position().lines();
+		// 兩者都依「交易日期 → id」排序（資料庫查詢與 PositionCalculator 同一個規則），第 i 筆互相對應
+		return IntStream.range(0, trades.size())
+				.mapToObj(i -> from(trades.get(i), lines.get(i)))
+				.toList();
+	}
 
 	/**
 	 * 持股資料異常（時間線不合理、無法重算）時：只列出原始交易（id、日期、股數、價格、版本號），

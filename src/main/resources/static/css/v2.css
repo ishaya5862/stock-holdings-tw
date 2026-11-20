@@ -1,0 +1,256 @@
+/* ==========================================================
+ * v2.css：持股記帳 2.0 新網頁專用樣式（第 6 題 C8；由 2026-11-20 預覽版 qiao/preview-v2/v2.css 正式寫入）
+ * 以 Bootstrap 5 為基礎（S4），配色 T1 墨黑＋金、Logo L2；只做電腦版。第一版 style.css 不動。
+ * ========================================================== */
+
+/* 配色 T1：墨黑＋金（2026-11-20 使用者選定） */
+:root {
+	--v2-brand: #1c2230;        /* 頁首底色 */
+	--v2-brand-text: #f5f3ee;
+	--v2-accent: #d4a017;       /* 強調色：logo 箭頭、目前頁籤底線、主要按鈕 */
+	--v2-accent-text: #1c2230;
+	--v2-page-bg: #ffffff;
+	--v2-panel-bg: #f7f7f5;     /* 摘要卡、表頭的淺底 */
+	--v2-border: #e4e2dc;
+	/* 台股慣例：紅色是賺、綠色是虧（品牌色刻意不用紅綠，避免混淆） */
+	--v2-profit: #d32f2f;
+	--v2-loss: #2e7d32;
+}
+
+body {
+	background-color: var(--v2-page-bg);
+	/* 只做電腦版：小於 1100px 出現水平捲軸，不重新排版 */
+	min-width: 1100px;
+}
+
+/* ---------- 頁首 ---------- */
+.v2-navbar {
+	background-color: var(--v2-brand);
+	border-bottom: 3px solid var(--v2-accent);
+	/* Bootstrap 的頁首用這幾個變數決定連結顏色；不改的話「目前頁籤」會是深色字，在墨黑底上看不到 */
+	--bs-navbar-color: var(--v2-brand-text);
+	--bs-navbar-hover-color: var(--v2-brand-text);
+	--bs-navbar-active-color: var(--v2-brand-text);
+	--bs-navbar-brand-color: var(--v2-brand-text);
+	--bs-navbar-brand-hover-color: var(--v2-brand-text);
+}
+
+.v2-navbar .nav-link {
+	opacity: 0.75;
+	border-bottom: 2px solid transparent;
+}
+
+.v2-navbar .nav-link.active {
+	opacity: 1;
+	border-bottom-color: var(--v2-accent);
+}
+
+.v2-logo {
+	width: 32px;
+	height: 32px;
+	margin-right: 0.5rem;
+	vertical-align: -9px;
+}
+
+.v2-version {
+	font-size: 0.7rem;
+	padding: 0.1rem 0.4rem;
+	margin-left: 0.35rem;
+	border-radius: 0.25rem;
+	background-color: var(--v2-accent);
+	color: var(--v2-accent-text);
+	vertical-align: 3px;
+}
+
+/* ---------- 摘要卡 ---------- */
+.v2-stat {
+	background-color: var(--v2-panel-bg);
+	border: 1px solid var(--v2-border);
+	border-radius: 0.5rem;
+	padding: 1rem 1.25rem;
+	height: 100%;
+}
+
+.v2-stat-label {
+	font-size: 0.85rem;
+	color: var(--bs-secondary-color);
+}
+
+.v2-stat-value {
+	font-size: 1.6rem;
+	font-weight: 700;
+}
+
+/* ---------- 區塊（細框線、無陰影，和第一版的陰影卡片區分） ---------- */
+.v2-section {
+	border: 1px solid var(--v2-border);
+	border-radius: 0.5rem;
+	overflow: hidden;
+	/* 送出中遮罩要蓋住整個區塊 */
+	position: relative;
+}
+
+.v2-section-header {
+	background-color: var(--v2-panel-bg);
+	border-bottom: 1px solid var(--v2-border);
+	padding: 0.75rem 1.25rem;
+	font-weight: 600;
+}
+
+/* ---------- 表格 ---------- */
+.v2-table {
+	margin-bottom: 0;
+}
+
+/* 表格內容一律不換行：「買進」「賣出」標籤、日期＋推估標記都維持一行（使用者回報換行問題後加上） */
+.v2-table td {
+	white-space: nowrap;
+}
+
+.v2-table thead th {
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: var(--bs-secondary-color);
+	background-color: var(--v2-page-bg);
+	white-space: nowrap;
+}
+
+/* 被選取（正在看交易明細）的那一列：左邊加強調色 */
+.v2-table tr.v2-selected td {
+	background-color: var(--v2-panel-bg);
+}
+
+.v2-table tr.v2-selected td:first-child {
+	box-shadow: inset 4px 0 0 var(--v2-accent);
+}
+
+/* 已全部賣出的持股：淡化 */
+.v2-table tr.v2-closed td {
+	color: var(--bs-secondary-color);
+}
+
+/* 數字：等寬數字、靠右 */
+.v2-num {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	white-space: nowrap;
+}
+
+.text-profit { color: var(--v2-profit); }
+.text-loss { color: var(--v2-loss); }
+
+/* ---------- 按鈕、標籤 ---------- */
+.btn-v2 {
+	background-color: var(--v2-accent);
+	border-color: var(--v2-accent);
+	color: var(--v2-accent-text);
+	font-weight: 600;
+}
+
+.btn-v2:hover,
+.btn-v2:focus {
+	filter: brightness(0.95);
+	background-color: var(--v2-accent);
+	border-color: var(--v2-accent);
+	color: var(--v2-accent-text);
+}
+
+/* 買進／賣出標籤 */
+.v2-side {
+	display: inline-block;
+	white-space: nowrap; /* 中文字之間也可能斷行，標籤本身也要禁止換行 */
+	font-size: 0.75rem;
+	padding: 0.15rem 0.5rem;
+	border-radius: 1rem;
+	font-weight: 600;
+}
+
+.v2-side-buy { background-color: #fdecea; color: var(--v2-profit); }
+.v2-side-sell { background-color: #e8f5e9; color: var(--v2-loss); }
+
+/* 「日期為推估（1.0 轉入）」提示標記 */
+.v2-estimated {
+	font-size: 0.7rem;
+	padding: 0.1rem 0.4rem;
+	border-radius: 0.25rem;
+	border: 1px dashed #b7791f;
+	color: #b7791f;
+}
+
+/* ---------- 買進／賣出頁 ---------- */
+
+/* 表單頁的版面寬度：表單＋右側試算 */
+.v2-form-page {
+	max-width: 1140px;
+}
+
+/* 頁面標題左側的買／賣色條，一眼分辨現在是買進還是賣出 */
+.v2-page-title {
+	border-left: 6px solid var(--v2-accent);
+	padding-left: 0.75rem;
+}
+
+.v2-page-title.v2-buy { border-left-color: var(--v2-profit); }
+.v2-page-title.v2-sell { border-left-color: var(--v2-loss); }
+
+/* 只顯示、不能輸入的資訊（持有股數、平均成本）：灰底，和白底輸入欄位區分（沿用第一版 .info-box 的想法） */
+.v2-info {
+	background-color: var(--v2-panel-bg);
+	border: 1px solid var(--v2-border);
+	border-radius: 0.375rem;
+	padding: 0.75rem 1rem;
+}
+
+/* 固定不能改的輸入框（例如從持股列點進來的代號）：灰底，看得出「不能輸入」 */
+.form-control[data-always-readonly] {
+	background-color: var(--v2-panel-bg);
+	color: var(--bs-secondary-color);
+}
+
+/* 試算區 */
+.v2-calc {
+	font-size: 0.95rem;
+}
+
+.v2-calc .v2-calc-row {
+	display: flex;
+	padding: 0.2rem 0;
+}
+
+.v2-calc .v2-calc-row > :first-child {
+	margin-right: auto;
+}
+
+.v2-calc .v2-calc-total {
+	border-top: 1px solid var(--v2-border);
+	margin-top: 0.35rem;
+	padding-top: 0.5rem;
+	font-weight: 700;
+}
+
+/* 送出中遮罩：蓋住整張表單，避免送出後還能修改或重複送出（沿用第一版 .submit-overlay） */
+.v2-submit-overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 10;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	background-color: rgba(255, 255, 255, 0.85);
+}
+
+.v2-submit-overlay.d-none {
+	display: none !important;
+}
+
+/* 摘要卡裡的小字（例如收盤價日期）：不要跟著大數字放大加粗 */
+.v2-stat-value .small {
+	font-size: 0.85rem;
+	font-weight: 400;
+}
+
+/* 已全部賣出的那一列雖然淡化，已實現損益仍是有意義的數字 → 維持紅賺綠虧 */
+.v2-table tr.v2-closed td.text-profit { color: var(--v2-profit); }
+.v2-table tr.v2-closed td.text-loss { color: var(--v2-loss); }

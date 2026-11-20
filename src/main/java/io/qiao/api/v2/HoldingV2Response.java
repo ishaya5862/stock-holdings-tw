@@ -54,7 +54,8 @@ public record HoldingV2Response(
 		@JsonProperty("data_error") String dataError,
 		@JsonProperty("version") Long version) {
 
-	static HoldingV2Response from(PositionView view) {
+	/** public：新網頁（C8-1 a）也用這個物件產生畫面，網頁和 App 2.0 看到的數字一定相同 */
+	public static HoldingV2Response from(PositionView view) {
 		PositionResult position = view.position(); // 資料異常時為 null → 計算出來的欄位都是 null
 		Unrealized unrealized = position != null ? position.unrealized() : null;
 		boolean hasQuote = view.quote() != null;

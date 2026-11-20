@@ -34,7 +34,8 @@ public record SummaryV2Response(
 
 	private static final BigDecimal HUNDRED = new BigDecimal("100");
 
-	static SummaryV2Response from(List<PositionView> views) {
+	/** public：新網頁（C8-1 a）的摘要卡也用這個，和 App 2.0 的總計一定相同 */
+	public static SummaryV2Response from(List<PositionView> views) {
 		BigDecimal totalCost = BigDecimal.ZERO;
 		BigDecimal marketValue = BigDecimal.ZERO;
 		BigDecimal unrealizedPnl = BigDecimal.ZERO;

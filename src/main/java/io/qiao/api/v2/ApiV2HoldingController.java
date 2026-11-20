@@ -1,17 +1,13 @@
 package io.qiao.api.v2;
 
 import java.util.List;
-import java.util.stream.IntStream;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import io.qiao.calculation.TradeLine;
-import io.qiao.entity.Trade;
 import io.qiao.service.PositionQueryService;
-import io.qiao.service.PositionQueryService.PositionView;
 
 /**
  * App 2.0 API 的讀取（第 6 題 C5）。路徑一律 /api/v2，回應 JSON（UTF-8）；規格寫在 API.md（第 8 題）。
@@ -46,17 +42,8 @@ public class ApiV2HoldingController {
 	/** 某一檔的交易明細：200，交易物件陣列（依交易日期、輸入順序）；沒有持有過 → 404 NOT_HELD */
 	@GetMapping("/holdings/{code}/trades")
 	public List<TradeV2Response> trades(@PathVariable String code) {
-		PositionView view = positionQueryService.findByCode(code);
-		List<Trade> trades = view.trades();
-		if (view.hasDataError()) {
-			// 資料異常、算不出來：照樣列出原始交易，使用者才能找出並修正錯的那一筆（朋友回饋 1-1 a）
-			return trades.stream().map(TradeV2Response::raw).toList();
-		}
-		List<TradeLine> lines = view.position().lines();
-		// 兩者都依「交易日期 → id」排序（資料庫查詢與 PositionCalculator 同一個規則），第 i 筆互相對應
-		return IntStream.range(0, trades.size())
-				.mapToObj(i -> TradeV2Response.from(trades.get(i), lines.get(i)))
-				.toList();
+		// 資料異常時照樣列出原始交易（朋友回饋 1-1 a）；規則在 TradeV2Response.listOf，新網頁共用
+		return TradeV2Response.listOf(positionQueryService.findByCode(code));
 	}
 
 	/** 總計：200，總計物件 */
