@@ -66,22 +66,36 @@ mvnw.cmd test
 
 測試使用 H2 記憶體資料庫（MySQL 相容模式），**不需要開 Docker**，也不會連到證交所或櫃買中心。
 
+## 功能
+
+| 網址 | 說明 |
+|---|---|
+| http://localhost:8080 | 首頁（標題與目前台北時間） |
+| http://localhost:8080/holdings | 持股清單：新增、修改、刪除 |
+
+持股欄位規則：股票代號必填（同一代號只能一筆）、張數為 1～999 的整數（1 張 = 1,000 股）、買進價大於 0 且最多兩位小數。
+
 ## 設計說明
 
 - **時區**：正式機在海外、主機時區不是台北，程式內所有時間一律以 `Asia/Taipei` 判斷（設定在 `app.zone`），不依賴主機設定。
+- **重複代號**：先由程式檢查，資料庫再以 UNIQUE 限制把關（處理兩人同時新增的情況）。代號會先去掉前後空白、轉成大寫再比對。
+- **資料表變更**：一律新增新版本的 Flyway migration（例如 `V2__...sql`），不修改已執行過的版本。
 
 ## 專案結構
 
 ```
 src/main/java/io/qiao/
 ├── config/       設定（時區 Clock 等）
-├── controller/   接收網頁請求，決定回傳哪個畫面
+├── controller/   接收網頁請求，決定回傳哪個畫面（含網頁的統一例外處理）
+├── dto/          表單資料（HoldingForm）
+├── exception/    自訂例外（代號重複、找不到持股）
 ├── service/      商業邏輯
 ├── repository/   存取資料庫（Spring Data JPA）
 └── entity/       對應資料表的類別
 src/main/resources/
 ├── db/migration/ Flyway 建表 SQL
-├── templates/    Thymeleaf 頁面（.html）
+├── templates/    Thymeleaf 頁面（fragments/ 為共用版型）
+├── messages.properties  表單型別錯誤的中文訊息
 ├── static/       CSS、JS、圖片
 └── application.properties
 compose.yml       MySQL（Docker Compose）
@@ -92,7 +106,7 @@ compose.yml       MySQL（Docker Compose）
 | 題目 | 狀態 |
 |---|---|
 | 第 1 題：專案骨架 | ✅ |
-| 第 2 題：持股的新增、修改、刪除、查詢 | ⬜ |
+| 第 2 題：持股的新增、修改、刪除、查詢 | ✅ |
 | 第 3 題：串接官方行情 | ⬜ |
 | 第 4 題：算盈虧，並寫單元測試 | ⬜ |
 | 第 5 題：給手機 App 用的 API | ⬜ |

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!--
+	新增與修改共用的表單。判斷方式：model 裡有 holdingId 就是「修改」，沒有就是「新增」。
+-->
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head(${holdingId != null} ? '修改持股' : '新增持股')}"></head>
+<body th:with="isEdit=${holdingId != null}">
+	<nav th:replace="~{fragments/layout :: navbar}"></nav>
+
+	<main class="container py-4">
+		<div class="mx-auto" style="max-width: 560px;">
+			<a class="text-decoration-none small" th:href="@{/holdings}">
+				<i class="bi bi-arrow-left"></i> 回持股清單
+			</a>
+
+			<div class="card app-card mt-2">
+				<div class="card-body p-4">
+					<h2 class="h4 fw-bold mb-4" th:text="${isEdit} ? '修改持股' : '新增持股'">新增持股</h2>
+
+					<!--
+						novalidate：關閉瀏覽器內建的檢查，統一由伺服器驗證並顯示中文錯誤訊息
+						（瀏覽器內建訊息各家不同，也可能被繞過，伺服器驗證才是真正的把關）。
+					-->
+					<form method="post" novalidate th:object="${holdingForm}"
+						th:action="${isEdit} ? @{/holdings/{id}(id=${holdingId})} : @{/holdings}">
+
+						<div class="mb-3">
+							<label for="code" class="form-label">股票代號</label>
+							<!-- 修改時代號不能改：readonly（仍會送出，但伺服器不採用） -->
+							<input type="text" class="form-control app-number" id="code" th:field="*{code}"
+								th:readonly="${isEdit}" th:classappend="${#fields.hasErrors('code')} ? 'is-invalid'"
+								placeholder="例：2330、0050、6488" autocomplete="off">
+							<div class="invalid-feedback" th:errors="*{code}">錯誤訊息</div>
+							<div class="form-text" th:if="${isEdit}">代號不能修改；要換股票請刪除後重新新增。</div>
+						</div>
+
+						<div class="mb-3">
+							<label for="lots" class="form-label">張數 <span class="text-muted small">（1 張 = 1,000 股，1～999）</span></label>
+							<input type="number" class="form-control app-number" id="lots" th:field="*{lots}"
+								th:classappend="${#fields.hasErrors('lots')} ? 'is-invalid'" placeholder="例：1">
+							<div class="invalid-feedback" th:errors="*{lots}">錯誤訊息</div>
+						</div>
+
+						<div class="mb-4">
+							<label for="buyPrice" class="form-label">買進價 <span class="text-muted small">（每股，最多兩位小數）</span></label>
+							<div class="input-group has-validation">
+								<input type="number" step="0.01" class="form-control app-number" id="buyPrice"
+									th:field="*{buyPrice}" th:classappend="${#fields.hasErrors('buyPrice')} ? 'is-invalid'"
+									placeholder="例：1000.00">
+								<span class="input-group-text">元</span>
+								<div class="invalid-feedback" th:errors="*{buyPrice}">錯誤訊息</div>
+							</div>
+						</div>
+
+						<div class="d-flex gap-2">
+							<button type="submit" class="btn btn-primary">
+								<i class="bi bi-check-lg me-1"></i><span th:text="${isEdit} ? '儲存修改' : '新增'">新增</span>
+							</button>
+							<a class="btn btn-outline-secondary" th:href="@{/holdings}">取消</a>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	</main>
+
+	<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+</body>
+</html>
