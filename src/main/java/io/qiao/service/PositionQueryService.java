@@ -20,6 +20,7 @@ import io.qiao.entity.Market;
 import io.qiao.entity.Stock;
 import io.qiao.entity.Trade;
 import io.qiao.exception.NotHeldException;
+import io.qiao.exception.TradeNotFoundException;
 import io.qiao.quote.QuoteCache;
 import io.qiao.quote.QuoteStatus;
 import io.qiao.quote.StockQuote;
@@ -82,6 +83,21 @@ public class PositionQueryService {
 		Holding holding = holdingRepository.findByCode(normalizedCode)
 				.orElseThrow(() -> new NotHeldException(normalizedCode));
 		Stock stock = stockService.findByCodes(List.of(normalizedCode)).get(normalizedCode);
+		List<Trade> trades = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(holding.getId());
+		return toView(holding, stock, trades, LocalDate.now(clock));
+	}
+
+	/**
+	 * 某一筆交易所屬的持股（2.0 網頁的修改頁用，第 6 題 C9）。
+	 *
+	 * @throws TradeNotFoundException 沒有這筆交易（例如另一個裝置剛刪掉）
+	 */
+	@Transactional(readOnly = true)
+	public PositionView findByTradeId(Long tradeId) {
+		Trade trade = tradeRepository.findById(tradeId).orElseThrow(() -> new TradeNotFoundException(tradeId));
+		Holding holding = holdingRepository.findById(trade.getHoldingId())
+				.orElseThrow(() -> new TradeNotFoundException(tradeId)); // 外鍵保證有；萬一沒有也當成找不到
+		Stock stock = stockService.findByCodes(List.of(holding.getCode())).get(holding.getCode());
 		List<Trade> trades = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(holding.getId());
 		return toView(holding, stock, trades, LocalDate.now(clock));
 	}

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<!--
+	2.0 新網頁前端 v2-form.js 的測試（第 6 題 C9；由預覽版 58 個案例延伸）。不需要啟動伺服器。
+
+	執行方式（Windows，用 Edge 的無畫面模式，結果印在輸出的 <pre id="out"> 裡）：
+	  "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --headless --disable-gpu --allow-file-access-from-files ^
+	    --dump-dom file:///<專案路徑>/src/test/js/v2-form-test.html
+	或直接用瀏覽器打開這個檔案，看畫面上的 RESULT 行（例如 RESULT 80/80）。
+-->
+<html><head><meta charset="UTF-8"></head>
+<body>
+<!-- DOM 測試用的欄位（和買進頁相同結構） -->
+<input id="quantity">
+<input type="radio" name="unit" id="unit-share" value="share" checked>
+<input type="radio" name="unit" id="unit-lot" value="lot">
+<div id="quantity-feedback"></div>
+<div id="quantity-hint"></div>
+<input id="price"><div id="price-feedback"></div>
+<input id="date"><div id="date-feedback"></div>
+<div id="alert-box" class="d-none"></div>
+<pre id="out"></pre>
+<script src="../../main/resources/static/js/v2-form.js"></script>
+<script>
+	try { localStorage.removeItem('v2-quantity-unit'); } catch (e) { /* 忽略 */ }
+	const cases = [];
+	function check(name, actual, expected) { cases.push([name, actual, expected]); }
+
+	// --- 金額 ---
+	check('手續費 100,000 元 → 142', V2Form.feeYuan(10000000n), 142n);
+	check('手續費 3,000 元 → 最低 20', V2Form.feeYuan(300000n), 20n);
+	check('手續費 有分 3,346.65 → 20', V2Form.feeYuan(334665n), 20n);
+	check('證交稅 2330 130,000 → 390', V2Form.taxYuan('2330', 13000000n), 390n);
+	check('證交稅 0050 168,900 → 168', V2Form.taxYuan('0050', 16890000n), 168n);
+	check('最大金額不失真', V2Form.formatCents(99999999n * 9999999999n), '9,999,999,899,000,000.01');
+	check('負數格式', V2Form.formatCents(-123456n), '−1,234.56');
+	check('API 金額字串轉分 368022.75', V2Form.plainToCents('368022.75'), 36802275n);
+	check('API 金額字串轉分 負數', V2Form.plainToCents('-7157.00'), -715700n);
+	check('API 金額字串轉分 null', V2Form.plainToCents(null), null);
+	check('平均成本 368,022.75 ÷ 600 → 613.37', V2Form.formatCents(V2Form.avgCents(36802275n, 600n)), '613.37');
+
+	// --- 股數（股） ---
+	check('股 全形加逗號 １,５００', V2Form.parseQuantity('１,５００', 'share').shares, 1500n);
+	check('股 0 → 最少 1 股', V2Form.parseQuantity('0', 'share').error, '最少 1 股');
+	check('股 99,999,999 可以', V2Form.parseQuantity('99999999', 'share').shares, 99999999n);
+	check('股 1 億 → P2', V2Form.parseQuantity('100000000', 'share').error, '單筆最多 99,999,999 股；數量更大請分成多筆記錄');
+	check('打字中 股 1.5 → 立刻提示整數', V2Form.quantityTypingError('1.5', 'share'), '股數必須是整數（例如 300、1500）；要填 1.5 張請切換成「張」');
+	check('打字中 股 1. → 也立刻提示', V2Form.quantityTypingError('1.', 'share') !== null, true);
+	check('打字中 股 12a → 立刻提示', V2Form.quantityTypingError('12a', 'share'), '股數只能輸入數字（例如 300、1500）');
+	check('打字中 股 1 億 → 立刻 P2', V2Form.quantityTypingError('100000000', 'share'), '單筆最多 99,999,999 股；數量更大請分成多筆記錄');
+	check('打字中 股 0 → 不提示（可能還在打）', V2Form.quantityTypingError('0', 'share'), null);
+
+	// --- 股數（張） ---
+	check('張 1.5 → 1500 股', V2Form.parseQuantity('1.5', 'lot').shares, 1500n);
+	check('張 1.001 → 1001 股（不用浮點）', V2Form.parseQuantity('1.001', 'lot').shares, 1001n);
+	check('張 0.3 → 300 股', V2Form.parseQuantity('0.3', 'lot').shares, 300n);
+	check('張 .5 → 500 股', V2Form.parseQuantity('.5', 'lot').shares, 500n);
+	check('張 2 → 2000 股', V2Form.parseQuantity('2', 'lot').shares, 2000n);
+	check('張 全形 １．５ → 1500', V2Form.parseQuantity('１．５', 'lot').shares, 1500n);
+	check('張 99999.999 → 99,999,999 股', V2Form.parseQuantity('99999.999', 'lot').shares, 99999999n);
+	check('張 100000 → P2', V2Form.parseQuantity('100000', 'lot').error, '單筆最多 99,999,999 股；數量更大請分成多筆記錄');
+	check('張 0 → 最少 1 股', V2Form.parseQuantity('0', 'lot').error, '最少 1 股');
+	check('張 1. = 1 張', V2Form.parseQuantity('1.', 'lot').shares, 1000n);
+	check('張 . → 格式不完整', V2Form.parseQuantity('.', 'lot').error, '張數格式不完整（例如 2、1.5）');
+	check('打字中 張 1.2345 → 立刻提示三位小數', V2Form.quantityTypingError('1.2345', 'lot'), '張數最多三位小數（1 張 = 1,000 股，例如 1.234 張 = 1,234 股）');
+	check('打字中 張 1. → 不提示', V2Form.quantityTypingError('1.', 'lot'), null);
+	check('打字中 張 1.2.3 → 立刻提示', V2Form.quantityTypingError('1.2.3', 'lot'), '張數只能輸入數字（例如 2、1.5）');
+	check('股轉張 1500 → 1.5', V2Form.sharesToLotText(1500n), '1.5');
+	check('股轉張 1001 → 1.001', V2Form.sharesToLotText(1001n), '1.001');
+	check('股轉張 2000 → 2', V2Form.sharesToLotText(2000n), '2');
+	check('股轉張 300 → 0.3', V2Form.sharesToLotText(300n), '0.3');
+	check('說明 1500', V2Form.describeShares(1500n), '= 1,500 股（1 張又 500 股）');
+	check('說明 300', V2Form.describeShares(300n), '= 300 股（零股）');
+	check('說明 2000', V2Form.describeShares(2000n), '= 2,000 股（2 張）');
+
+	// --- 價格 ---
+	check('價格 10.5 → 1050 分', V2Form.parsePrice('10.5').cents, 1050n);
+	check('價格 0 → 錯誤', V2Form.parsePrice('0').error, '價格必須大於 0');
+	check('打字中 價格 10.123 → 立刻提示', V2Form.priceTypingError('10.123'), '價格最多兩位小數（例如 28.55）');
+	check('打字中 價格 10. → 不提示', V2Form.priceTypingError('10.'), null);
+	check('打字中 價格 1 億 → 立刻提示', V2Form.priceTypingError('100000000'), '價格最大 99,999,999.99');
+	check('打字中 價格 abc → 立刻提示', V2Form.priceTypingError('abc'), '價格只能輸入數字（例如 600、28.55）');
+	check('價格轉 API 字串', V2Form.centsToPlain(60050n), '600.50');
+
+	// --- 代號、日期 ---
+	check('代號 00679B 可以', V2Form.checkCode('00679B'), null);
+	check('打字中 代號 23 不提示', V2Form.codeTypingError('23'), null);
+	check('打字中 代號 2A 立刻提示', V2Form.codeTypingError('2A') !== null, true);
+	check('未來日期 錯誤', V2Form.checkDate('2999-01-01') !== null, true);
+	check('今天（台北）可以', V2Form.checkDate(V2Form.todayInTaipei()), null);
+	check('1990-01-01 可以（和後端下限相同）', V2Form.checkDate('1990-01-01'), null);
+	check('1989-12-31 錯誤', V2Form.checkDate('1989-12-31'), '日期不能早於 1990-01-01');
+
+	// --- 週末、休市日提醒（C8-5～C8-7；只提醒不擋） ---
+	const CLOSED = { '2025': ['2025-01-27', '2025-01-28'] };
+	function warn(date) { const w = V2Form.nonTradingDayWarning(date, CLOSED); return w ? w.message : null; }
+	check('星期六提醒', warn('2025-03-01'), '這天是星期六，台股沒有開盤。確定日期正確嗎？');
+	check('星期日提醒', warn('2025-03-02'), '這天是星期日，台股沒有開盤。確定日期正確嗎？');
+	check('休市日提醒（2025 農曆除夕）', warn('2025-01-28'), '這天是休市日，台股沒有開盤。確定日期正確嗎？');
+	check('一般交易日不提醒', warn('2025-01-22'), null);
+	check('沒有資料的年份（2019 平日）→ 註明只檢查週末', warn('2019-03-04'), '2019 年沒有休市日資料，只檢查了週末');
+	check('沒有資料的年份 noData 標記', V2Form.nonTradingDayWarning('2019-03-04', CLOSED).noData, true);
+	check('沒有資料的年份的週末照樣提醒', warn('2019-03-02'), '這天是星期六，台股沒有開盤。確定日期正確嗎？');
+	check('日期本身錯（未來）→ 不另外提醒', warn('2999-01-04'), null);
+
+	// --- 錯誤處理（handleError）：回傳 true = 要換新的 Idempotency-Key ---
+	const alertBox = document.getElementById('alert-box');
+	check('逾時 → 不換 key（重送才會被認出）', V2Form.handleError({ uncertain: true }, alertBox), false);
+	check('逾時 → 提示不會重複記錄', alertBox.textContent.indexOf('不會重複記錄') >= 0, true);
+	check('同 key 不同內容（422）→ 換 key', V2Form.handleError({ error: { code: 'IDEMPOTENCY_KEY_REUSED', message: 'x' } }, alertBox), true);
+	check('處理中（409）→ 不換 key', V2Form.handleError({ error: { code: 'IDEMPOTENCY_KEY_IN_PROGRESS', message: 'x' } }, alertBox), false);
+	V2Form.handleError({ error: { code: 'VALIDATION_ERROR', message: '價格錯', fields: { price: '價格必須大於 0' } } }, alertBox);
+	check('欄位錯誤標在對應的輸入框', document.getElementById('price-feedback').textContent, '價格必須大於 0');
+	V2Form.handleError({ error: { code: 'OVERSELL', message: '<b>賣超</b>', details: { estimated_buys: [{ id: 7, trade_date: '2026-11-20', version: 0 }] } } }, alertBox);
+	check('伺服器訊息當成文字（不會變成 HTML）', alertBox.querySelector('b'), null);
+	check('賣超附上修改推估日期的連結', alertBox.querySelector('a').getAttribute('href'), '/v2/trades/7/edit');
+	V2Form.handleError({ error: { code: 'VERSION_CONFLICT', message: '另一個裝置已修改' } }, alertBox);
+	check('版本衝突附上重新載入連結', alertBox.querySelector('a').textContent, '重新載入最新內容');
+	check('key 格式符合伺服器規則（1～64 英數字 - _）', /^[A-Za-z0-9_-]{1,64}$/.test(V2Form.newKey()), true);
+
+	// --- DOM：模擬打字與切換單位 ---
+	const input = document.getElementById('quantity');
+	const field = V2Form.bindQuantity({
+		input: input, unitName: 'unit', hint: document.getElementById('quantity-hint'),
+		extraCheck: function (s) { return s > 600n ? '不能超過持有的 600 股' : null; }
+	});
+	function type(value) { input.value = value; input.dispatchEvent(new Event('input')); }
+	type('1.5');
+	check('DOM 股 打 1.5 → 立刻紅字', input.classList.contains('is-invalid'), true);
+	type('１５００');
+	check('DOM 全形自動轉半形', input.value, '1500');
+	check('DOM 打 1500 → 立刻提示賣超', document.getElementById('quantity-feedback').textContent, '不能超過持有的 600 股');
+	type('500');
+	check('DOM 改成 500 → 紅字消失', input.classList.contains('is-invalid'), false);
+	check('DOM 說明', document.getElementById('quantity-hint').textContent, '= 500 股（零股）');
+	document.getElementById('unit-lot').checked = true;
+	document.getElementById('unit-lot').dispatchEvent(new Event('change'));
+	check('DOM 切換成張 → 500 股變 0.5', input.value, '0.5');
+	check('DOM 張 0.5 → 送出 500 股', field.shares().shares, 500n);
+	field.setShares(600n);
+	check('DOM 全部賣出（張）→ 0.6', input.value, '0.6');
+	type('0.7');
+	check('DOM 張 0.7 → 立刻提示賣超', document.getElementById('quantity-feedback').textContent, '不能超過持有的 600 股');
+
+	let pass = 0;
+	const lines = cases.map(function (c) {
+		const ok = c[1] === c[2];
+		if (ok) pass++;
+		return (ok ? 'PASS ' : 'FAIL ') + c[0] + (ok ? '' : '  實際=' + String(c[1]) + ' 預期=' + String(c[2]));
+	});
+	document.getElementById('out').textContent = 'RESULT ' + pass + '/' + cases.length + '\n' + lines.join('\n');
+</script>
+</body></html>

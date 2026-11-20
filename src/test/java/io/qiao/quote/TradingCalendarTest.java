@@ -104,4 +104,54 @@ class TradingCalendarTest {
 		assertThat(calendar.isTradingDay(LocalDate.of(2030, 1, 2), RequestThrottle.NONE)).isTrue();
 		server.verify(); // 只查一次
 	}
+
+	// ===== 第 6 題 C8：空的清單＝沒有資料、網頁用的已知休市日 =====
+
+	/** 官方對沒有資料的年份（2020 以前、未公布）也回 ok，只是 data 是空的（2026-11-21 實測） */
+	private static String emptyYear(int year) {
+		return "{\"stat\":\"ok\",\"date\":\"" + year + "0101\",\"fields\":[\"日期\",\"名稱\",\"說明\"],\"data\":[],\"total\":0}";
+	}
+
+	@Test
+	void 官方回應是空的_當成沒有資料_改用內附檔_不會把元旦當成開盤() {
+		TradingCalendar calendar = calendar(true);
+		server.expect(requestTo(startsWith(PATH))).andRespond(withSuccess(emptyYear(2026), MediaType.APPLICATION_JSON));
+
+		assertThat(calendar.isTradingDay(LocalDate.of(2026, 1, 1), RequestThrottle.NONE)).isFalse(); // 內附檔：開國紀念日
+		server.verify();
+	}
+
+	@Test
+	void 官方回應是空的也沒有內附檔_平日當成開盤_而且不會記成這年沒有休市日() {
+		TradingCalendar calendar = calendar(true);
+		server.expect(ExpectedCount.once(), requestTo(startsWith(PATH)))
+				.andRespond(withSuccess(emptyYear(2030), MediaType.APPLICATION_JSON));
+
+		assertThat(calendar.isTradingDay(LocalDate.of(2030, 1, 2), RequestThrottle.NONE)).isTrue();
+		assertThat(calendar.knownClosedDays()).doesNotContainKey(2030); // 網頁會顯示「只檢查週末」
+		server.verify();
+	}
+
+	@Test
+	void 網頁用的已知休市日_內附2021到2027_不向官方查詢() {
+		TradingCalendar calendar = calendar(true);
+
+		var known = calendar.knownClosedDays();
+
+		assertThat(known.keySet()).containsExactly(2021, 2022, 2023, 2024, 2025, 2026, 2027);
+		assertThat(known.get(2025)).contains(LocalDate.of(2025, 1, 28))      // 農曆除夕
+				.doesNotContain(LocalDate.of(2025, 1, 22));                  // 春節前最後交易日（有開盤）
+		assertThat(known.get(2026)).contains(LocalDate.of(2026, 1, 1));
+		server.verify(); // 沒有發出任何請求
+	}
+
+	@Test
+	void 網頁用的已知休市日_排程從官方取得的年份優先() {
+		TradingCalendar calendar = calendar(true);
+		server.expect(requestTo(startsWith(PATH))).andRespond(withSuccess(HOLIDAYS_2026, MediaType.APPLICATION_JSON));
+		calendar.isTradingDay(LocalDate.of(2026, 11, 20), RequestThrottle.NONE); // 排程查過 2026
+
+		assertThat(calendar.knownClosedDays().get(2026))
+				.containsExactlyInAnyOrder(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 2, 12), LocalDate.of(2026, 10, 9));
+	}
 }

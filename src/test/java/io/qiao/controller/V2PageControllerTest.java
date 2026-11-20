@@ -199,6 +199,117 @@ class V2PageControllerTest {
 				.andExpect(redirectedUrl("/v2"));
 	}
 
+	// ===== 買進、賣出、修改頁（C9）：送出由 JavaScript 呼叫 /api/v2，這裡驗證頁面資料 =====
+
+	@Test
+	void 買進頁_從持股進來代號固定_持股與休市日放進頁面() throws Exception {
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2/buy").param("code", "２３３０"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString("fixedCode: \"2330\"")))
+				.andExpect(content().string(Matchers.containsString("\"total_cost\":\"368022.75\"")))
+				.andExpect(content().string(Matchers.containsString("\"shares\":600")))
+				// C8-6 b：內附 2021～2027 的休市日（例如 2025 農曆除夕）放進頁面，開頁不查官方
+				.andExpect(content().string(Matchers.containsString("\"2025-01-28\"")))
+				.andExpect(content().string(Matchers.containsString("\"2021\"")))
+				.andExpect(content().string(Matchers.containsString("/js/v2-form.js")));
+	}
+
+	@Test
+	void 買進頁_記一筆買進_代號自己輸入() throws Exception {
+		mockMvc.perform(get("/v2/buy"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString("fixedCode: null")));
+	}
+
+	@Test
+	void 賣出頁_持有股數與成本放進頁面() throws Exception {
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2/sell").param("code", "2330"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString("code: \"2330\"")))
+				.andExpect(content().string(Matchers.containsString("\"shares\":600")))
+				.andExpect(content().string(Matchers.containsString("\"total_cost\":\"368022.75\"")))
+				// 成功訊息要顯示公司名稱。Thymeleaf 放進 JavaScript 時把中文轉成 \\u 跳脫（合法的 JS，執行時就是「台積電」）
+				.andExpect(content().string(Matchers.containsString("name: \"\\u53F0\\u7A4D\\u96FB\"")))
+				.andExpect(content().string(Matchers.containsString("全部賣出")));
+	}
+
+	@Test
+	void 賣出頁_已全部賣出_回總覽說明() throws Exception {
+		tradeService.buy("2363", LocalDate.of(2026, 3, 2), 1000, new BigDecimal("10.00"));
+		tradeService.sell("2363", LocalDate.of(2026, 5, 15), 1000, new BigDecimal("10.50"));
+
+		mockMvc.perform(get("/v2/sell").param("code", "2363"))
+				.andExpect(redirectedUrl("/v2"))
+				.andExpect(flash().attribute("errorMessage", "2363 目前沒有持股（已全部賣出），不能賣出"));
+	}
+
+	@Test
+	void 賣出頁_沒有持有或沒帶代號_回總覽() throws Exception {
+		mockMvc.perform(get("/v2/sell").param("code", "2330")).andExpect(redirectedUrl("/v2"));
+		mockMvc.perform(get("/v2/sell")).andExpect(redirectedUrl("/v2"));
+	}
+
+	@Test
+	void 賣出頁_資料異常_回總覽請先到明細修正() throws Exception {
+		Long brokenId = holdingService.create("2317", 1, new BigDecimal("10")).getId();
+		tradeRepository.save(Trade.create(brokenId, TradeSide.SELL, LocalDate.of(2026, 3, 2), 1000,
+				new BigDecimal("10.50"), LocalDateTime.now(clock)));
+
+		mockMvc.perform(get("/v2/sell").param("code", "2317"))
+				.andExpect(redirectedUrl("/v2"))
+				.andExpect(flash().attribute("errorMessage", Matchers.startsWith("2317 的交易資料異常，請先到明細修正")));
+	}
+
+	@Test
+	void 修改頁_原本的內容與版本號放進頁面_推估日期提示() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("600")); // App 1.0 新增：推估日期
+		Trade trade = tradeRepository.findAll().get(0);
+
+		mockMvc.perform(get("/v2/trades/{id}/edit", trade.getId()))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString("tradeId: " + trade.getId())))
+				.andExpect(content().string(Matchers.containsString("version: " + trade.getVersion())))
+				.andExpect(content().string(Matchers.containsString("shares: 1000")))
+				.andExpect(content().string(Matchers.containsString("value=\"600.00\"")))
+				.andExpect(content().string(Matchers.containsString("value=\"" + trade.getTradeDate() + "\""))) // YYYY-MM-DD
+				.andExpect(content().string(Matchers.containsString("日期是<strong>推估</strong>的")));
+	}
+
+	@Test
+	void 修改頁_資料異常的持股也能修改_才能修正錯的那一筆() throws Exception {
+		Long brokenId = holdingService.create("2317", 1, new BigDecimal("10")).getId();
+		Trade brokenSell = tradeRepository.save(Trade.create(brokenId, TradeSide.SELL, LocalDate.of(2026, 3, 2), 1000,
+				new BigDecimal("10.50"), LocalDateTime.now(clock)));
+
+		mockMvc.perform(get("/v2/trades/{id}/edit", brokenSell.getId()))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString("side: \"SELL\"")));
+	}
+
+	@Test
+	void 修改頁_找不到這筆交易或id不是數字_回總覽() throws Exception {
+		mockMvc.perform(get("/v2/trades/{id}/edit", 999999))
+				.andExpect(redirectedUrl("/v2"))
+				.andExpect(flash().attribute("errorMessage", "找不到這筆交易，可能已在另一個裝置刪除"));
+		mockMvc.perform(get("/v2/trades/{id}/edit", "abc"))
+				.andExpect(redirectedUrl("/v2"));
+	}
+
+	@Test
+	void 明細頁_刪除按鈕帶版本號與說明_載入刪除程式() throws Exception {
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				// 格式：動作 代號 名稱 股數 × 價格（日期）
+				.andExpect(content().string(Matchers.containsString("data-description=\"賣出 2330 台積電 200 股 × 700.00 元（2026-08-20）\"")))
+				.andExpect(content().string(Matchers.containsString("data-version=")))
+				.andExpect(content().string(Matchers.containsString("/js/v2-trade-delete.js")));
+	}
+
 	// ===== 首頁、第一版網頁（C8-2 a） =====
 
 	@Test

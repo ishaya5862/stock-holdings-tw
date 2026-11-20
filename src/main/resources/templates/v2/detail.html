@@ -12,6 +12,8 @@
 
 	<main class="container py-4">
 		<div th:replace="~{v2/fragments :: flash}"></div>
+		<!--/* 刪除失敗（例如另一個裝置改過、刪除後會賣超）的訊息 */-->
+		<div id="page-alert" class="d-none" role="alert"></div>
 
 		<div class="mb-2"><a th:href="@{/v2}"><i class="bi bi-arrow-left me-1"></i>回持股總覽</a></div>
 		<div class="d-flex align-items-center mb-3">
@@ -89,7 +91,15 @@
 					</tr>
 				</thead>
 				<tbody>
-					<tr th:each="t : ${trades}" th:attr="data-trade-id=${t.id}">
+					<!--/*
+						deleteText：刪除確認視窗的說明。先用 th:with 算好，因為 Thymeleaf 為了安全，
+						不允許在 th:attr 裡呼叫 Bean（@v2Formats）。
+						日期要用 #temporals.format 明確指定格式：直接用 + 串接會依地區格式變成「3/2/26」（測試抓到）
+					*/-->
+					<tr th:each="t : ${trades}" th:attr="data-trade-id=${t.id}"
+						th:with="deleteText=${(t.side == 'BUY' ? '買進' : '賣出') + ' ' + holding.code + ' ' + (holding.name ?: '') + ' '
+							+ @v2Formats.shares(t.shares) + ' 股 × ' + @v2Formats.money(t.price) + ' 元（'
+							+ #temporals.format(t.tradeDate, 'yyyy-MM-dd') + '）'}">
 						<td class="ps-4">
 							<span th:text="${t.tradeDate}">2026-03-02</span>
 							<!--/* 1.0 轉入、App 1.0 新增時沒有買進日期，用記帳日代替（D3）→ 標示，請使用者確認 */-->
@@ -112,7 +122,7 @@
 							<a class="me-2" th:href="@{/v2/trades/{id}/edit(id=${t.id})}">修改</a>
 							<!--/* 刪除：確認後由 v2-trade-delete.js 呼叫 DELETE /api/v2/trades/{id}?version=（C9） */-->
 							<button type="button" class="btn btn-link p-0 text-danger align-baseline" data-delete-trade
-								th:attr="data-trade-id=${t.id},data-version=${t.version},data-description=${t.tradeDate + ' ' + (t.side == 'BUY' ? '買進' : '賣出') + ' ' + t.shares + ' 股'}">刪除</button>
+								th:attr="data-trade-id=${t.id},data-version=${t.version},data-code=${holding.code},data-description=${deleteText}">刪除</button>
 						</td>
 					</tr>
 				</tbody>
@@ -124,5 +134,7 @@
 	</main>
 
 	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
+	<script th:src="@{/js/v2-form.js}"></script>
+	<script th:src="@{/js/v2-trade-delete.js}"></script>
 </body>
 </html>

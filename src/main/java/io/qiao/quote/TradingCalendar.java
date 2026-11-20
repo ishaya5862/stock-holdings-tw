@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
@@ -54,6 +55,12 @@ public class TradingCalendar {
 
 	/** 每一年的休市日（取得成功才會放進來，取得一次就夠用一整年） */
 	private final Map<Integer, Set<LocalDate>> closedDaysByYear = new ConcurrentHashMap<>();
+	/** 內附檔最早可能的年份 = 交易日期的下限（TradeService.EARLIEST_DATE）；實際有檔案的是 2021 起 */
+	private static final int FIRST_BUNDLED_YEAR = 1990;
+
+	/** 內附檔讀過一次就記住（knownClosedDays 用）；volatile：其他執行緒讀得到讀好的結果 */
+	private volatile Map<Integer, Set<LocalDate>> bundled;
+
 	/** 每一年最後一次「完全取不到」的時間 */
 	private final Map<Integer, Instant> failedAtByYear = new ConcurrentHashMap<>();
 
@@ -102,6 +109,38 @@ public class TradingCalendar {
 		return Set.of();
 	}
 
+	/**
+	 * 目前已知的休市日（2.0 網頁提醒「這天可能不是交易日」用，第 6 題 C8-5 a）：
+	 * 內附檔的年份（2021～2027）＋排程已經從官方取得的年份（同一年以官方為準）。
+	 *
+	 * **不會向官方查詢**：開頁時官方慢或擋下也不影響頁面（C8-5 a）。
+	 * 不在結果裡的年份 = 沒有資料，網頁只能檢查週末。
+	 *
+	 * @return 年份 → 休市日（依年份排序）
+	 */
+	public Map<Integer, Set<LocalDate>> knownClosedDays() {
+		Map<Integer, Set<LocalDate>> result = new TreeMap<>(bundledClosedDays());
+		result.putAll(closedDaysByYear); // 排程從官方取得的（或排程當時讀的內附檔）優先
+		return result;
+	}
+
+	/** 內附檔全部讀一次就記住（檔案在程式裡，執行中不會變）；1990（交易日期下限）～明年 */
+	private Map<Integer, Set<LocalDate>> bundledClosedDays() {
+		Map<Integer, Set<LocalDate>> loaded = bundled;
+		if (loaded == null) {
+			// 兩個請求同時第一次讀取，頂多各讀一次，結果相同，不需要加鎖
+			Map<Integer, Set<LocalDate>> years = new TreeMap<>();
+			int lastYear = LocalDate.now(clock).getYear() + 1;
+			for (int year = FIRST_BUNDLED_YEAR; year <= lastYear; year++) {
+				int y = year;
+				fromBundledFile(year).ifPresent(days -> years.put(y, days));
+			}
+			loaded = Map.copyOf(years);
+			bundled = loaded;
+		}
+		return loaded;
+	}
+
 	/** 1. 官方 API */
 	private Optional<Set<LocalDate>> fromApi(int year, RequestThrottle throttle) {
 		if (!apiEnabled) {
@@ -146,6 +185,11 @@ public class TradingCalendar {
 	private Set<LocalDate> parse(JsonNode root) {
 		if (!"ok".equalsIgnoreCase(root.path("stat").asText())) {
 			throw new IllegalStateException("休市日回應狀態異常：" + root.path("stat").asText());
+		}
+		// 官方對沒有資料的年份（2020 以前、還沒公布的年份）也回 stat ok，只是 data 是空的（2026-11-21 實測）。
+		// 每一年至少有元旦等假日，空的代表「沒有資料」而不是「沒有休市日」→ 當成取不到（改用下一個來源）
+		if (root.path("data").isEmpty()) {
+			throw new IllegalStateException("沒有這一年的資料（data 是空的）");
 		}
 		JsonNode fields = root.get("fields");
 		int dateColumn = QuoteParsing.columnIndex(fields, "日期");
