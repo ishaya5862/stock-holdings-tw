@@ -35,8 +35,9 @@ public class QuoteCache {
 		entries.put(code, new Entry(QuoteStatus.UNAVAILABLE, null, checkedAt));
 	}
 
-	public void putNotFound(String code, LocalDateTime checkedAt) {
-		entries.put(code, new Entry(QuoteStatus.NOT_FOUND, null, checkedAt));
+	/** 近期（本月與上月）沒有成交資料 */
+	public void putNoRecentTrade(String code, LocalDateTime checkedAt) {
+		entries.put(code, new Entry(QuoteStatus.NO_RECENT_TRADE, null, checkedAt));
 	}
 
 	public void remove(String code) {

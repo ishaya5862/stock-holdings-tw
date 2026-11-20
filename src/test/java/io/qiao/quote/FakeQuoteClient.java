@@ -33,6 +33,11 @@ class FakeQuoteClient implements StockQuoteClient {
 		return behavior.apply(code);
 	}
 
+	@Override
+	public Optional<StockQuote> fetchLastTrade(String code, RequestThrottle throttle, int lookbackMonths) {
+		return Optional.empty();
+	}
+
 	/** 被查過的代號（依查詢順序） */
 	List<String> requestedCodes() {
 		return requestedCodes;

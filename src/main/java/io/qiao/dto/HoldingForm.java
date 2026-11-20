@@ -8,7 +8,9 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
+
+import io.qiao.validation.StockCodes;
 
 /**
  * 網頁表單（新增 / 修改持股）接收的資料。
@@ -19,8 +21,9 @@ import jakarta.validation.constraints.Size;
  */
 public class HoldingForm {
 
+	// 格式規則統一放在 StockCodes（前端即時檢查、App API 共用同一份）
 	@NotBlank(message = "請輸入股票代號")
-	@Size(max = 10, message = "股票代號最多 10 個字")
+	@Pattern(regexp = StockCodes.PATTERN_OR_EMPTY, message = StockCodes.MESSAGE)
 	private String code;
 
 	// 用 Integer 而不是 int：沒填時是 null，才能被 @NotNull 抓到並顯示「請輸入」
@@ -40,7 +43,8 @@ public class HoldingForm {
 	}
 
 	public void setCode(String code) {
-		this.code = code;
+		// 先去掉前後空白再驗證：使用者多打一個空白（「 2330」）不應該被判成格式錯誤
+		this.code = code == null ? null : code.trim();
 	}
 
 	public Integer getLots() {

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.time.Clock;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -25,7 +26,10 @@ import io.qiao.exception.QuoteUnavailableException;
  * 1. 查「本月」（台北時間），有資料就取最後一個有收盤價的交易日。
  * 2. 本月沒有資料（月初、或每月第一個交易日收盤前）→ 再查「上個月」。
  *    少了這一步，每月第一個交易日收盤前，所有股票都會被誤判成「不存在」。
- * 3. 兩個月都沒有 → 這個市場沒有這檔股票。
+ * 3. 兩個月都沒有 → 這個市場「近期沒有成交資料」（代號不存在，或長期停止交易、已下市、已轉到另一個市場）。
+ *
+ * 另外提供 fetchLastTrade：已存在的持股近兩個月都查不到時，再往前多查幾個月，找出「最後一次成交」，
+ * 用來分辨「長期停止交易」和「真的查不到」（只在排程中使用，每天最多一次）。
  */
 abstract class AbstractStockQuoteClient implements StockQuoteClient {
 
@@ -42,12 +46,30 @@ abstract class AbstractStockQuoteClient implements StockQuoteClient {
 	@Override
 	public Optional<StockQuote> fetchLatest(String code, RequestThrottle throttle) {
 		YearMonth thisMonth = YearMonth.now(clock);
-		for (YearMonth month : List.of(thisMonth, thisMonth.minusMonths(1))) {
-			// 每一次請求前都先經過 throttle（排程時同一檔的「本月」「上個月」兩次請求也會間隔開）
+		return findLatest(code, throttle, List.of(thisMonth, thisMonth.minusMonths(1)));
+	}
+
+	@Override
+	public Optional<StockQuote> fetchLastTrade(String code, RequestThrottle throttle, int lookbackMonths) {
+		// 本月、上個月 fetchLatest 已經查過，從「兩個月前」開始往前找
+		YearMonth thisMonth = YearMonth.now(clock);
+		List<YearMonth> months = new ArrayList<>();
+		for (int i = 2; i < 2 + lookbackMonths; i++) {
+			months.add(thisMonth.minusMonths(i));
+		}
+		return findLatest(code, throttle, months);
+	}
+
+	/**
+	 * 依序查詢指定的月份（由近到遠），第一個有資料的月份裡，取最後一個有收盤價的交易日。
+	 */
+	private Optional<StockQuote> findLatest(String code, RequestThrottle throttle, List<YearMonth> months) {
+		for (YearMonth month : months) {
+			// 每一次請求前都先經過 throttle（排程時同一檔的多個月份請求也會間隔開）
 			throttle.beforeRequest();
 			MonthlyQuotes monthly = fetchMonth(code, month);
 			if (!monthly.dailyCloses().isEmpty()) {
-				// 清單已依日期排序，最後一筆就是「最近一個交易日」
+				// 清單已依日期排序，最後一筆就是這個月最後一個有收盤價的交易日
 				DailyClose latest = monthly.dailyCloses().get(monthly.dailyCloses().size() - 1);
 				return Optional.of(new StockQuote(code, monthly.name(), market(), latest.closePrice(), latest.date()));
 			}

@@ -86,6 +86,20 @@ class HoldingControllerTest {
 	}
 
 	@Test
+	void 清單收盤價_近期無成交資料_顯示中性說明與最後收盤價() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000")); // 上次收盤價 1,100.00（2026/11/19）
+		quoteCache.putNoRecentTrade("2330", LocalDateTime.of(2026, 11, 20, 14, 0));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("近期無成交資料")))
+				.andExpect(content().string(containsString("可能停止交易或已下市")))
+				.andExpect(content().string(containsString("最後收盤價")))
+				.andExpect(content().string(containsString("2026/11/19")))
+				.andExpect(content().string(not(containsString("查無此代號"))));
+	}
+
+	@Test
 	void 清單收盤價_啟動後還沒查過_顯示更新中() throws Exception {
 		holdingService.create("2330", 1, new BigDecimal("1000"));
 		quoteCache.remove("2330"); // 模擬伺服器剛重開、排程還沒輪到
@@ -192,6 +206,31 @@ class HoldingControllerTest {
 		mockMvc.perform(post("/holdings").param("code", "2330").param("lots", "1").param("buyPrice", "0"))
 				.andExpect(status().isOk())
 				.andExpect(content().string(containsString("買進價必須大於 0")));
+	}
+
+	@Test
+	void 代號格式錯誤_後端擋下_就算前端檢查被繞過也不儲存() throws Exception {
+		for (String badCode : new String[] { "台積電", "233", "1234567", "A2330", "2330AB" }) {
+			mockMvc.perform(post("/holdings").param("code", badCode).param("lots", "1").param("buyPrice", "10"))
+					.andExpect(status().isOk())
+					.andExpect(content().string(containsString("股票代號為 4～6 位數字，最後可加 1 個英文字母")));
+		}
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 代號含英文字母的ETF可以新增_小寫自動轉大寫() throws Exception {
+		mockMvc.perform(post("/holdings").param("code", "00679b").param("lots", "3").param("buyPrice", "28.5"))
+				.andExpect(redirectedUrl("/holdings"));
+
+		assertThat(holdingRepository.existsByCode("00679B")).isTrue();
+	}
+
+	@Test
+	void 新增頁帶有前後端共用的代號規則() throws Exception {
+		mockMvc.perform(get("/holdings/new"))
+				.andExpect(content().string(containsString("data-pattern=\"^[0-9]{4,6}[A-Za-z]?$\"")))
+				.andExpect(content().string(containsString("js/holding-form.js")));
 	}
 
 	@Test

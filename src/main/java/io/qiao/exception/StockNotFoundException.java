@@ -9,6 +9,7 @@ package io.qiao.exception;
 public class StockNotFoundException extends RuntimeException {
 
 	public StockNotFoundException(String code) {
-		super("查無股票代號 " + code + "（上市、上櫃都查不到）");
+		// 文字保持中性：近兩個月沒有成交資料，可能是代號打錯，也可能是長期停止交易或已下市
+		super("查無股票代號 " + code + "：上市、上櫃近兩個月都沒有成交資料（請確認代號，或該股可能已停止交易、下市）");
 	}
 }
