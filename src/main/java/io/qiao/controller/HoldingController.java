@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import io.qiao.calculation.ProfitCalculator;
 import io.qiao.dto.HoldingForm;
 import io.qiao.dto.HoldingListView;
 import io.qiao.dto.HoldingView;
@@ -41,13 +42,18 @@ public class HoldingController {
 	}
 
 	/**
-	 * 這個 Controller 的每個畫面都會帶上股票代號規則，給表單頁的前端即時檢查使用。
-	 * （@ModelAttribute 方法：每次處理請求前都會執行，驗證失敗重新顯示表單時也會有）
+	 * 這個 Controller 的每個畫面都會帶上前端需要的規則（@ModelAttribute 方法：每次處理請求前都會執行，
+	 * 驗證失敗重新顯示表單時也會有）：
+	 * - 股票代號規則：表單頁的前端即時檢查
+	 * - 手續費率、最低手續費：表單頁的「預估買進成本」即時試算（取自 ProfitCalculator，前端不自己寫死）
 	 */
 	@ModelAttribute
-	public void addStockCodeRule(Model model) {
+	public void addFrontendRules(Model model) {
 		model.addAttribute("codePattern", StockCodes.PATTERN);
 		model.addAttribute("codeMessage", StockCodes.MESSAGE);
+		// toPlainString：避免 BigDecimal 輸出成科學記號（例如 1.425E-3），前端才能正確解析
+		model.addAttribute("feeRate", ProfitCalculator.FEE_RATE.toPlainString());
+		model.addAttribute("minFee", ProfitCalculator.MIN_FEE.toPlainString());
 	}
 
 	/** 清單（收盤價只讀記憶體快取，不會每次打開就查官方） */

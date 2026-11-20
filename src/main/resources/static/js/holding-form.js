@@ -2,6 +2,7 @@
  * 持股表單（新增／修改）的前端行為：
  * 1. 股票代號：輸入時即時「去空白、全形轉半形、轉大寫」並檢查格式（不用等按下送出）。
  * 2. 防止重複送出：按下送出後，按鈕變「送出中…」並停用、填寫區蓋上遮罩，直到跳轉到下一頁都不能再送。
+ * 3. 預估買進成本：依張數、買進價即時試算「買進金額＋手續費」（只顯示，不送出）。
  *
  * 前端檢查只是提示，真正的把關在後端（HoldingForm、StockCodes）；規則取自頁面上的 data-pattern（後端 StockCodes.PATTERN）。
  *
@@ -161,5 +162,91 @@
 		if (event.persisted) {
 			unlockForm();
 		}
+		updateCostPreview(); // 瀏覽器還原欄位內容後，重新計算一次
 	});
+
+	// ===== 3. 預估買進成本（只在前端顯示，不送出、不存檔） =====
+	//
+	// 買進金額 = 張數 × 1,000 × 買進價；手續費 = 買進金額 × 費率，無條件捨去到元，最低 20 元。
+	// 費率、最低手續費從頁面的 data- 屬性讀取（後端 ProfitCalculator 的值），前端不自己寫死。
+	//
+	// 為什麼用 BigInt（大整數）而不是一般數字：
+	// JavaScript 一般數字是浮點數，有誤差（0.1 + 0.2 = 0.30000000000000004），而且超過 2^53 就不精確。
+	// 所以先把價格換成「分」（整數），全部用 BigInt 整數運算，和後端用 BigDecimal 的理由相同。
+
+	const costPreview = document.getElementById('cost-preview');
+	const costSummary = document.getElementById('cost-preview-summary'); // 收合時那一行（標題後面的金額）
+	const costResult = document.getElementById('cost-preview-result');   // 點開後的明細
+	const lotsInput = document.getElementById('lots');
+	const priceInput = document.getElementById('buyPrice');
+	const EMPTY_TEXT = '：填寫張數與買進價後自動計算';
+	const SHARES_PER_LOT = 1000n;
+
+	/** 把小數字串（例 "0.001425"）拆成「分子 / 分母」兩個 BigInt：1425n / 1000000n */
+	function parseDecimal(text) {
+		const parts = String(text).split('.');
+		const fraction = parts[1] || '';
+		return {
+			numerator: BigInt(parts[0] + fraction),
+			denominator: 10n ** BigInt(fraction.length)
+		};
+	}
+
+	/** 千分位：1001425n → "1,001,425" */
+	function formatMoney(value) {
+		return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+	}
+
+	/** 張數：1～999 的整數，不合格回傳 null */
+	function readLots() {
+		const text = lotsInput.value.trim();
+		if (!/^[0-9]{1,3}$/.test(text)) {
+			return null;
+		}
+		const lots = BigInt(text);
+		return lots >= 1n && lots <= 999n ? lots : null;
+	}
+
+	/** 買進價換成「分」：大於 0、最多 8 位整數、2 位小數，不合格回傳 null */
+	function readPriceCents() {
+		const match = /^([0-9]{1,8})(?:\.([0-9]{1,2}))?$/.exec(priceInput.value.trim());
+		if (!match) {
+			return null;
+		}
+		const cents = BigInt(match[1]) * 100n + BigInt((match[2] || '').padEnd(2, '0'));
+		return cents > 0n ? cents : null;
+	}
+
+	function updateCostPreview() {
+		if (!costPreview || !costSummary || !costResult || !lotsInput || !priceInput) {
+			return;
+		}
+		const lots = readLots();
+		const priceCents = readPriceCents();
+		if (lots === null || priceCents === null) {
+			// 還沒填好或格式不對：不顯示可能誤導的數字；明細清空（CSS 會把空的明細隱藏，點開只剩手續費規則）
+			costSummary.textContent = EMPTY_TEXT;
+			costResult.textContent = '';
+			return;
+		}
+		const rate = parseDecimal(costPreview.dataset.feeRate);
+		const minFee = BigInt(costPreview.dataset.minFee);
+
+		// 張數 × 1,000 股 × 價格（分）÷ 100 = 元；1,000 股一定能被 100 整除，所以買進金額一定是整數元
+		const amount = lots * SHARES_PER_LOT * priceCents / 100n;
+		// BigInt 的除法會自動捨去小數（金額都是正數，等於無條件捨去）
+		let fee = amount * rate.numerator / rate.denominator;
+		if (fee < minFee) {
+			fee = minFee; // 先捨去、再跟最低 20 元比（與後端相同）
+		}
+		const total = formatMoney(amount + fee) + ' 元';
+		costSummary.textContent = ' ' + total + '（看明細）';
+		costResult.textContent = '買進金額 ' + formatMoney(amount) + ' ＋ 手續費 ' + formatMoney(fee) + ' ＝ ' + total;
+	}
+
+	if (lotsInput && priceInput) {
+		lotsInput.addEventListener('input', updateCostPreview);
+		priceInput.addEventListener('input', updateCostPreview);
+		updateCostPreview(); // 修改頁、驗證失敗重新顯示時，欄位已經有值 → 一打開就算好
+	}
 })();

@@ -25,10 +25,10 @@ public class ProfitCalculator {
 	/** 1 張 = 1,000 股 */
 	public static final int SHARES_PER_LOT = 1000;
 
-	/** 手續費率 0.1425% */
-	private static final BigDecimal FEE_RATE = new BigDecimal("0.001425");
-	/** 手續費每筆最低 20 元 */
-	private static final BigDecimal MIN_FEE = new BigDecimal("20");
+	/** 手續費率 0.1425%（public：新增／修改頁的「預估買進成本」由後端把這個值傳給前端，規則只有這一份） */
+	public static final BigDecimal FEE_RATE = new BigDecimal("0.001425");
+	/** 手續費每筆最低 20 元（public：同上，傳給前端） */
+	public static final BigDecimal MIN_FEE = new BigDecimal("20");
 	/** 證交稅：一般股票 0.3% */
 	private static final BigDecimal STOCK_TAX_RATE = new BigDecimal("0.003");
 	/** 證交稅：ETF 0.1% */

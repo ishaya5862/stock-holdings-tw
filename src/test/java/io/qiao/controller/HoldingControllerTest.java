@@ -383,6 +383,40 @@ class HoldingControllerTest {
 				.andExpect(content().string(not(containsString("name=\"code\""))));
 	}
 
+	// ===== 預估買進成本（前端試算，費率由後端提供） =====
+
+	/** 費率必須是一般小數寫法（不能是 1.425E-3 科學記號），前端才能正確解析 */
+	private static final String FEE_ATTRIBUTES = "data-fee-rate=\"0.001425\" data-min-fee=\"20\"";
+
+	@Test
+	void 新增頁_有預估買進成本區塊_費率取自後端() throws Exception {
+		mockMvc.perform(get("/holdings/new"))
+				.andExpect(content().string(containsString("id=\"cost-preview\"")))
+				.andExpect(content().string(containsString(FEE_ATTRIBUTES)))
+				.andExpect(content().string(containsString("預估買進成本")))
+				// 用 HTML 內建的摺疊（details／summary），預設收合（沒有 open 屬性）
+				.andExpect(content().string(containsString("<details class=\"cost-preview mb-4\" id=\"cost-preview\"")))
+				.andExpect(content().string(containsString("id=\"cost-preview-summary\"")))
+				.andExpect(content().string(not(containsString("<details class=\"cost-preview mb-4\" id=\"cost-preview\" open"))));
+	}
+
+	@Test
+	void 修改頁_也有預估買進成本區塊() throws Exception {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		mockMvc.perform(get("/holdings/{id}/edit", saved.getId()))
+				.andExpect(content().string(containsString("id=\"cost-preview\"")))
+				.andExpect(content().string(containsString(FEE_ATTRIBUTES)));
+	}
+
+	@Test
+	void 輸入錯誤重新顯示時_預估買進成本的費率還在() throws Exception {
+		// @ModelAttribute 方法每次請求都會執行，驗證失敗回到表單也要有費率，前端才能繼續試算
+		mockMvc.perform(post("/holdings").param("code", "2330").param("lots", "0").param("buyPrice", "1000"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString(FEE_ATTRIBUTES)));
+	}
+
 	@Test
 	void 新增頁_仍然有代號輸入框_沒有股票資訊區塊() throws Exception {
 		mockMvc.perform(get("/holdings/new"))
