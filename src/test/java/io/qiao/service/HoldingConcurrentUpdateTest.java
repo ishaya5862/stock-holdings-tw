@@ -21,12 +21,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 import io.qiao.repository.StockRepository;
+import io.qiao.repository.TradeRepository;
 
 /**
  * 兩個「獨立交易」交錯執行時，不能互相覆寫對方的欄位（朋友回報的問題）。
@@ -47,6 +49,9 @@ class HoldingConcurrentUpdateTest {
 	private HoldingRepository holdingRepository;
 
 	@Autowired
+	private TradeRepository tradeRepository;
+
+	@Autowired
 	private StockService stockService;
 
 	@Autowired
@@ -64,6 +69,7 @@ class HoldingConcurrentUpdateTest {
 
 	@BeforeEach
 	void setUp() {
+		tradeRepository.deleteAll(); // 2.0：交易紀錄的外鍵指向持股、不連帶刪除（C2-2）→ 先刪交易
 		holdingRepository.deleteAll();
 		stockRepository.deleteAll(); // 先刪持股再刪股票（外鍵）
 		when(stockLookupService.lookup(anyString())).thenReturn(new StockQuote(
@@ -75,6 +81,7 @@ class HoldingConcurrentUpdateTest {
 	@AfterEach
 	void tearDown() {
 		otherThread.shutdownNow();
+		tradeRepository.deleteAll(); // 2.0：交易紀錄的外鍵指向持股、不連帶刪除（C2-2）→ 先刪交易
 		holdingRepository.deleteAll();
 		stockRepository.deleteAll(); // 先刪持股再刪股票（外鍵）
 	}
@@ -99,9 +106,9 @@ class HoldingConcurrentUpdateTest {
 		userCommitted.countDown();
 		background.get(10, TimeUnit.SECONDS);
 
-		Holding result = holdingRepository.findById(holdingId).orElseThrow();
-		assertThat(result.getLots()).as("使用者改的張數").isEqualTo(5);
-		assertThat(result.getBuyPrice()).as("使用者改的買進價").isEqualByComparingTo("980.50");
+		HoldingView result = holdingService.findViewById(holdingId); // 2.0：張數、買進價改由交易紀錄算出
+		assertThat(result.lots()).as("使用者改的張數").isEqualTo(5L);
+		assertThat(result.buyPrice()).as("使用者改的買進價").isEqualByComparingTo("980.50");
 		assertThat(stockRepository.findById("2330").orElseThrow().getLastClosePrice()).as("背景寫的收盤價").isEqualByComparingTo("1100.00");
 	}
 
@@ -125,8 +132,8 @@ class HoldingConcurrentUpdateTest {
 		backgroundCommitted.countDown();
 		user.get(10, TimeUnit.SECONDS);
 
-		Holding result = holdingRepository.findById(holdingId).orElseThrow();
-		assertThat(result.getLots()).as("使用者改的張數").isEqualTo(5);
+		HoldingView result = holdingService.findViewById(holdingId); // 2.0：張數、買進價改由交易紀錄算出
+		assertThat(result.lots()).as("使用者改的張數").isEqualTo(5L);
 		assertThat(stockRepository.findById("2330").orElseThrow().getLastClosePrice()).as("背景寫的收盤價").isEqualByComparingTo("1100.00");
 		assertThat(stockRepository.findById("2330").orElseThrow().getLastPriceDate()).as("背景寫的收盤日期").isEqualTo(LocalDate.of(2026, 11, 20));
 	}

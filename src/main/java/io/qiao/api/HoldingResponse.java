@@ -3,6 +3,7 @@ package io.qiao.api;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -35,7 +36,7 @@ public record HoldingResponse(
 		@JsonProperty("code") String code,
 		@JsonProperty("name") String name,
 		@JsonProperty("market") String market,
-		@JsonProperty("lots") Integer lots,
+		@JsonProperty("lots") Long lots,
 		@JsonProperty("buy_price") BigDecimal buyPrice,
 		@JsonProperty("current_price") BigDecimal currentPrice,
 		@JsonProperty("price_date") LocalDate priceDate,
@@ -52,7 +53,7 @@ public record HoldingResponse(
 				view.id(),
 				view.code(),
 				// 名稱還沒查到的舊資料：用代號代替（規格規定 name 不可為 null）
-				view.name() != null ? view.name() : view.code(),
+				withUpgradeNote(view.name() != null ? view.name() : view.code(), view.v1Limits()),
 				view.market().name(),
 				view.lots(),
 				view.buyPrice(),
@@ -63,7 +64,21 @@ public record HoldingResponse(
 	}
 
 	/**
-	 * 金額轉成整數元。1.0 版的金額一定是整數（張數 × 1,000 × 最多兩位小數的價格，手續費和稅都已捨去到元），
+	 * 2.0（第 6 題 C4-7、N-b）：1.0 表達不了的持股（零股、多次買進、賣出），在名稱後面加註原因並請使用者更新。
+	 * App 1.0 能顯示伺服器文字的地方只有名稱和錯誤訊息，這是讓 1.0 使用者知道「張數看起來不完整」的唯一方式。
+	 *
+	 * 防止 App 2.0 誤用（M1、M5）：
+	 * - 加註只寫在這裡（v1 專用的輸出轉換），v2 的回應直接用股票名稱，永遠不會有加註。
+	 * - 格式固定「【請更新 App 2.0：…】」，就算被誤用也一眼看得出不是股票名稱。
+	 * 1.0 的資料（整張、一筆買進）原因清單是空的，名稱和升級前完全相同。
+	 */
+	static String withUpgradeNote(String name, List<String> v1Limits) {
+		return v1Limits.isEmpty() ? name : name + "【請更新 App 2.0：" + String.join("、", v1Limits) + "】";
+	}
+
+	/**
+	 * 金額轉成整數元（規格：金額是整數）。1.0 的資料金額一定是整數（張數 × 1,000 × 最多兩位小數的價格）；
+	 * 2.0 的零股、部分賣出會有「分」，HoldingView 已先四捨五入到元（C4-6：每筆先捨入，總計用捨入後加總）。
 	 * 這裡只是把 BigDecimal 的 93708.00 轉成 Long 的 93708，輸出才會是 JSON 整數。
 	 */
 	static Long toWholeDollars(BigDecimal amount) {

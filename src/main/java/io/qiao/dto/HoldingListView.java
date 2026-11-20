@@ -12,6 +12,8 @@ public record HoldingListView(List<HoldingView> holdings, PortfolioSummary summa
 
 	public static HoldingListView of(List<HoldingView> holdings) {
 		return new HoldingListView(holdings,
-				PortfolioSummary.of(holdings.stream().map(HoldingView::toSummaryLine).toList()));
+				// 資料異常的持股算不出金額，不算進總計（朋友回饋 1-1 a）
+				PortfolioSummary.of(holdings.stream().filter(view -> !view.hasDataError())
+						.map(HoldingView::toSummaryLine).toList()));
 	}
 }

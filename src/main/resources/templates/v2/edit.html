@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<!--
+	持股記帳 2.0：修改一筆交易（第 6 題 C9；C8-4 a 獨立頁面，和買進、賣出頁共用 v2-form.js）。
+	- 日期、股數、價格可以改；買或賣不能改（C6：要改買賣請刪除後重新記錄）
+	- 送出：PUT /api/v2/trades/{id}，內容帶頁面打開時的版本號（version）。
+	  另一個裝置（例如手機）在這之間改過或刪過 → 伺服器回 409 VERSION_CONFLICT，不會覆蓋，請重新載入。
+	- 修改後這一檔的交易依日期整條重算；會造成某一天賣超 → 伺服器回 OVERSELL 並說明哪一天
+	- 推估的買進日期（1.0 轉入）：改成實際日期後就不再標示「推估」
+-->
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{v2/fragments :: head('修改交易 ' + ${holding.code})}"></head>
+<body>
+	<nav th:replace="~{v2/fragments :: navbar('form')}"></nav>
+
+	<main class="container v2-form-page py-4">
+		<a th:href="@{/v2/holdings/{code}(code=${holding.code})}" class="small text-decoration-none">
+			<i class="bi bi-arrow-left"></i> 回 <span th:text="${holding.code}">2330</span> 交易明細
+		</a>
+		<h1 class="h4 mt-2 mb-3 v2-page-title" th:classappend="${trade.side == 'BUY'} ? 'v2-buy' : 'v2-sell'">
+			修改<span th:text="${trade.side == 'BUY'} ? '買進' : '賣出'">買進</span>
+			<span th:text="${holding.code}">2330</span> <span th:text="${holding.name}">台積電</span>
+		</h1>
+
+		<div th:if="${trade.dateEstimated}" class="alert alert-warning small">
+			<i class="bi bi-calendar-event me-1"></i>這筆買進的日期是<strong>推估</strong>的（1.0 沒有買進日期，用當初記帳的日期代替）。
+			請改成實際的買進日期，平均成本與已實現損益才會依正確的順序計算。
+		</div>
+
+		<div id="form-alert" class="d-none" role="alert"></div>
+		<noscript><div class="alert alert-danger">這一頁需要啟用 JavaScript 才能送出。</div></noscript>
+
+		<div class="row g-4">
+			<div class="col-8">
+				<div class="v2-section">
+					<div class="v2-submit-overlay d-none" role="status" aria-live="polite">
+						<div class="spinner-border mb-2"></div>
+						<div>送出中，請稍候…</div>
+						<div class="small text-secondary">請勿關閉或重新整理頁面</div>
+					</div>
+					<form id="edit-form" class="p-4" novalidate>
+						<div class="row g-3 mb-3">
+							<div class="col-3">
+								<label for="date" class="form-label" th:text="${trade.side == 'BUY'} ? '買進日期' : '賣出日期'">買進日期</label>
+								<!--/* type="date" 的值一定要是 YYYY-MM-DD，明確指定格式（不依地區格式） */-->
+								<input id="date" type="date" class="form-control" th:value="${#temporals.format(trade.tradeDate, 'yyyy-MM-dd')}">
+								<div id="date-feedback" class="invalid-feedback"></div>
+								<div id="date-warning" class="form-text"></div>
+							</div>
+							<div class="col-5">
+								<label for="quantity" class="form-label">數量</label>
+								<div class="input-group has-validation">
+									<input id="quantity" class="form-control text-end" inputmode="decimal" autocomplete="off">
+									<input type="radio" class="btn-check" name="unit" id="unit-share" value="share" checked>
+									<label class="btn btn-outline-secondary" for="unit-share">股</label>
+									<input type="radio" class="btn-check" name="unit" id="unit-lot" value="lot">
+									<label class="btn btn-outline-secondary" for="unit-lot">張</label>
+									<div id="quantity-feedback" class="invalid-feedback"></div>
+								</div>
+								<div id="quantity-hint" class="form-text"></div>
+							</div>
+							<div class="col-4">
+								<label for="price" class="form-label">每股價格</label>
+								<div class="input-group has-validation">
+									<input id="price" class="form-control text-end" inputmode="decimal" autocomplete="off" th:value="${trade.price}">
+									<span class="input-group-text">元</span>
+									<div id="price-feedback" class="invalid-feedback"></div>
+								</div>
+							</div>
+						</div>
+						<div class="d-flex justify-content-end gap-2">
+							<a th:href="@{/v2/holdings/{code}(code=${holding.code})}" class="btn btn-outline-secondary">取消</a>
+							<button type="submit" class="btn btn-v2"><i class="bi bi-check-lg me-1"></i>儲存修改</button>
+						</div>
+					</form>
+				</div>
+			</div>
+
+			<div class="col-4">
+				<div class="v2-section">
+					<div class="v2-section-header">試算</div>
+					<div class="p-3 v2-calc">
+						<div id="calc-empty" class="text-secondary">填好數量和價格後顯示</div>
+						<div id="calc-body" class="d-none">
+							<div class="v2-calc-row"><span>成交金額</span><span class="v2-num" id="calc-amount"></span></div>
+							<div class="v2-calc-row"><span>手續費</span><span class="v2-num" id="calc-fee"></span></div>
+							<div class="v2-calc-row" th:if="${trade.side == 'SELL'}"><span>證交稅</span><span class="v2-num" id="calc-tax"></span></div>
+						</div>
+						<div class="small text-secondary mt-2">
+							儲存後這一檔的交易會依日期從頭重算（平均成本、已實現損益、之後每一筆的持有股數）；
+							如果會造成某一天賣出時股數不夠，伺服器會拒絕並說明是哪一天。
+						</div>
+					</div>
+				</div>
+				<div class="v2-info mt-3 small">
+					修改前：<span th:text="${trade.tradeDate}">2026-03-02</span>
+					<span th:text="${@v2Formats.shares(trade.shares)}">300</span> 股 ×
+					<span th:text="${@v2Formats.money(trade.price)}">600.00</span> 元
+				</div>
+			</div>
+		</div>
+	</main>
+
+	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
+	<script th:src="@{/js/v2-form.js}"></script>
+	<script th:inline="javascript">
+		window.V2_PAGE = {
+			code: /*[[${holding.code}]]*/ '2330',
+			name: /*[[${holding.name}]]*/ '台積電',
+			tradeId: /*[[${trade.id}]]*/ 1,
+			side: /*[[${trade.side}]]*/ 'BUY',
+			shares: /*[[${trade.shares}]]*/ 300,
+			version: /*[[${trade.version}]]*/ 0,
+			closedDays: /*[[${closedDays}]]*/ {}
+		};
+	</script>
+	<script>
+		(function () {
+			'use strict';
+			const PAGE = window.V2_PAGE;
+			const form = document.getElementById('edit-form');
+			const date = document.getElementById('date');
+			const price = document.getElementById('price');
+
+			const quantity = V2Form.bindQuantity({
+				input: document.getElementById('quantity'),
+				unitName: 'unit',
+				hint: document.getElementById('quantity-hint'),
+				onChange: recalc
+			});
+			document.getElementById('quantity').addEventListener('blur', function () {
+				if (this.value !== '') {
+					quantity.check();
+				}
+			});
+			V2Form.bindPrice(price, recalc);
+			const dateField = V2Form.bindDate(date, PAGE.closedDays, recalc);
+			quantity.setShares(BigInt(PAGE.shares)); // 原本的股數，依記住的單位顯示（張：0.3）
+
+			function recalc() {
+				const q = quantity.shares();
+				const p = V2Form.parsePrice(price.value);
+				const ready = !q.error && !p.error;
+				document.getElementById('calc-empty').classList.toggle('d-none', ready);
+				document.getElementById('calc-body').classList.toggle('d-none', !ready);
+				if (!ready) {
+					return;
+				}
+				const amount = q.shares * p.cents;
+				document.getElementById('calc-amount').textContent = V2Form.formatCents(amount);
+				document.getElementById('calc-fee').textContent = V2Form.formatCents(V2Form.feeYuan(amount) * 100n);
+				const tax = document.getElementById('calc-tax');
+				if (tax) {
+					tax.textContent = V2Form.formatCents(V2Form.taxYuan(PAGE.code, amount) * 100n);
+				}
+			}
+
+			V2Form.bindSubmit(form, {
+				validate: function () {
+					const results = [
+						dateField.check(),
+						quantity.check(),
+						(function () { const m = V2Form.parsePrice(price.value).error; V2Form.showError(price, m); return !m; })()
+					];
+					return results.every(Boolean);
+				},
+				confirm: dateField.confirmTradingDay,
+				request: function () {
+					return {
+						method: 'PUT',
+						url: '/api/v2/trades/' + PAGE.tradeId,
+						body: {
+							trade_date: date.value,
+							shares: Number(quantity.shares().shares),
+							price: V2Form.centsToPlain(V2Form.parsePrice(price.value).cents),
+							version: PAGE.version // 頁面打開時的版本號：另一個裝置改過就會被拒絕（409），不會覆蓋
+						}
+					};
+				},
+				onSuccess: function () {
+					return {
+						// 格式和買進、賣出相同：動作 代號 名稱 股數（日期放最後的括號）
+						message: '已修改：' + (PAGE.side === 'BUY' ? '買進' : '賣出') + ' ' + PAGE.code + ' ' + (PAGE.name || '') + ' '
+							+ V2Form.withCommas(quantity.shares().shares) + ' 股（' + date.value + '）',
+						redirect: '/v2/holdings/' + encodeURIComponent(PAGE.code)
+					};
+				}
+			});
+		})();
+	</script>
+</body>
+</html>

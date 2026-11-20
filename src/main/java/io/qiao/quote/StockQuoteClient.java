@@ -1,5 +1,6 @@
 package io.qiao.quote;
 
+import java.time.YearMonth;
 import java.util.Optional;
 
 import io.qiao.entity.Market;
@@ -34,6 +35,22 @@ public interface StockQuoteClient {
 	 * @throws QuoteUnavailableException 連不上等「無法判斷」的情況
 	 */
 	Optional<StockQuote> fetchLastTrade(String code, RequestThrottle throttle, int lookbackMonths);
+
+	/**
+	 * 查「某一個月」有沒有成交（第 6 題 L2 b：補登已下市股票的交易時，確認交易日期那個月這檔確實有在交易）。
+	 *
+	 * @return 有成交 → 那個月最後一個交易日的行情（名稱、市場、收盤價）；沒有 → Optional.empty()
+	 * @throws QuoteUnavailableException 連不上等「無法判斷」的情況
+	 */
+	Optional<StockQuote> fetchInMonth(String code, YearMonth month);
+
+	/**
+	 * 這個來源最早可以查的月份；更早的月份不送出查詢（無法判斷，不能當成「查無」）。
+	 * 證交所的個股日成交資訊只提供 2010-01-04（民國 99 年）起的資料（2026-11-21 實測）。
+	 */
+	default YearMonth earliestMonth() {
+		return YearMonth.of(1990, 1); // 交易日期的下限（TradeService.EARLIEST_DATE）
+	}
 
 	/** 不限制請求間隔（新增持股時使用，要在 10 秒內有結果） */
 	default Optional<StockQuote> fetchLatest(String code) {

@@ -24,6 +24,42 @@ public enum ApiErrorCode {
 	/** 官方行情連不上，無法確認代號是否存在（D-1 決定：503） */
 	QUOTE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
 
+	/**
+	 * 2.0：這筆持股有零股、多次買進或賣出紀錄，1.0 的修改或刪除會破壞它（C4-3、C4-4）。
+	 * 用 409（和目前資料狀態衝突）比 400（輸入錯誤）準確；App 1.0 任何狀態碼都會顯示 message。
+	 */
+	UPGRADE_REQUIRED(HttpStatus.CONFLICT),
+
+	/** 2.0（v2）：目前沒有持有這個代號（從沒買過，或最後一筆交易已刪除） */
+	NOT_HELD(HttpStatus.NOT_FOUND),
+
+	/** 2.0（v2）：找不到這筆交易（可能已在另一個裝置刪除） */
+	TRADE_NOT_FOUND(HttpStatus.NOT_FOUND),
+
+	/** 2.0（v2）：賣超（某一天賣出的股數超過當時持有），附 trade_date、held_before（C6-5 a） */
+	OVERSELL(HttpStatus.CONFLICT),
+
+	/** 2.0（v2）：修改、刪除交易時版本號不符，另一個裝置已經改過（C3-5、C6-2 b） */
+	VERSION_CONFLICT(HttpStatus.CONFLICT),
+
+	/** 2.0（v2，C7）：寫入請求沒帶 Idempotency-Key（C7-1 b 一律必帶；IETF 草案建議 400） */
+	IDEMPOTENCY_KEY_REQUIRED(HttpStatus.BAD_REQUEST),
+
+	/** 2.0（v2，C7）：Idempotency-Key 格式不對（1～64 個英數字、-、_，建議 UUID） */
+	IDEMPOTENCY_KEY_INVALID(HttpStatus.BAD_REQUEST),
+
+	/** 2.0（v2，C7）：同一個 key 用在不同內容或不同 API（IETF 草案建議 422） */
+	IDEMPOTENCY_KEY_REUSED(HttpStatus.UNPROCESSABLE_ENTITY),
+
+	/** 2.0（v2，C7）：同一個 key 的前一個請求還在處理（IETF 草案建議 409），稍後用同一個 key 再送 */
+	IDEMPOTENCY_KEY_IN_PROGRESS(HttpStatus.CONFLICT),
+
+	/** 2.0：同一檔持股正在被另一個請求寫入，等鎖超過 3 秒（C3-2）；稍後再試即可 */
+	HOLDING_BUSY(HttpStatus.CONFLICT),
+
+	/** 2.0：App 2.0（X-Client: app2）呼叫了 v1，請改用 /api/v2（M4，防止誤用） */
+	USE_API_V2(HttpStatus.BAD_REQUEST),
+
 	/** HTTP 方法不支援（例如對 /api/v1/summary 送 POST） */
 	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED),
 

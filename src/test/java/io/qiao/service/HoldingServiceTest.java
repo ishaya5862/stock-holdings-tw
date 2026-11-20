@@ -7,7 +7,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,9 +18,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.qiao.calculation.TradeSide;
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
 import io.qiao.entity.Stock;
+import io.qiao.entity.Trade;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
@@ -27,6 +32,7 @@ import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 import io.qiao.repository.StockRepository;
+import io.qiao.repository.TradeRepository;
 
 /**
  * 持股 Service 測試（H2 記憶體資料庫，Flyway 一樣會建表）。
@@ -48,6 +54,13 @@ class HoldingServiceTest {
 
 	@Autowired
 	private StockRepository stockRepository;
+
+	@Autowired
+	private TradeRepository tradeRepository;
+
+	/** 台北時區的 Clock（TimeConfig）：「今天」以台北為準 */
+	@Autowired
+	private Clock clock;
 
 	@MockitoBean
 	private StockLookupService stockLookupService;
@@ -85,9 +98,9 @@ class HoldingServiceTest {
 		Stock stock = stockRepository.findById("6488").orElseThrow();
 		assertThat(stock.getMarket()).isEqualTo(Market.TWSE);
 		assertThat(stock.getLastClosePrice()).isEqualByComparingTo("500.00");
-		Holding holding = holdingRepository.findById(saved.getId()).orElseThrow();
-		assertThat(holding.getLots()).isEqualTo(1);
-		assertThat(holding.getBuyPrice()).isEqualByComparingTo("600");
+		HoldingView holding = holdingService.findViewById(saved.getId()); // 2.0：張數、買進價改由交易紀錄算出
+		assertThat(holding.lots()).isEqualTo(1L);
+		assertThat(holding.buyPrice()).isEqualByComparingTo("600");
 	}
 
 	@Test
@@ -106,7 +119,7 @@ class HoldingServiceTest {
 
 		Holding again = holdingService.create("2330", 2, new BigDecimal("1100"));
 
-		assertThat(again.getLots()).isEqualTo(2);
+		assertThat(holdingService.findViewById(again.getId()).lots()).isEqualTo(2L);
 	}
 
 	@Test
@@ -133,8 +146,8 @@ class HoldingServiceTest {
 
 		assertThat(saved.getId()).isNotNull();
 		assertThat(saved.getCode()).isEqualTo("00632R");
-		assertThat(saved.getLots()).isEqualTo(2);
-		assertThat(saved.getBuyPrice()).isEqualByComparingTo("15.50");
+		assertThat(holdingService.findViewById(saved.getId()).lots()).isEqualTo(2L);
+		assertThat(holdingService.findViewById(saved.getId()).buyPrice()).isEqualByComparingTo("15.50");
 		assertThat(saved.getCreatedAt()).isNotNull();
 	}
 
@@ -170,8 +183,8 @@ class HoldingServiceTest {
 		Holding updated = holdingService.update(saved.getId(), 3, new BigDecimal("980.50"));
 
 		assertThat(updated.getCode()).isEqualTo("2330");
-		assertThat(updated.getLots()).isEqualTo(3);
-		assertThat(updated.getBuyPrice()).isEqualByComparingTo("980.50");
+		assertThat(holdingService.findViewById(updated.getId()).lots()).isEqualTo(3L);
+		assertThat(holdingService.findViewById(updated.getId()).buyPrice()).isEqualByComparingTo("980.50");
 	}
 
 	@Test
@@ -187,6 +200,59 @@ class HoldingServiceTest {
 		holdingService.delete(saved.getId());
 
 		assertThat(holdingRepository.existsById(saved.getId())).isFalse();
+	}
+
+	// ===== 2.0 過渡期（第 6 題 C2）：1.0 的新增、修改、刪除同步寫交易紀錄 =====
+
+	@Test
+	void 新增持股_同時建立一筆買進紀錄_日期是台北的今天並標記推估() {
+		Holding saved = holdingService.create("2330", 2, new BigDecimal("1000.50"));
+
+		List<Trade> trades = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(saved.getId());
+		assertThat(trades).hasSize(1);
+		Trade trade = trades.get(0);
+		assertThat(trade.getSide()).isEqualTo(TradeSide.BUY);
+		assertThat(trade.getShares()).isEqualTo(2000L); // 2 張 = 2,000 股
+		assertThat(trade.getPrice()).isEqualByComparingTo("1000.50");
+		assertThat(trade.getTradeDate()).isEqualTo(LocalDate.now(clock)); // 海外主機也以台北的今天為準
+		assertThat(trade.isDateEstimated()).isTrue(); // App 1.0 沒有日期（D3）
+	}
+
+	@Test
+	void 重複代號新增失敗_不會多出交易紀錄() {
+		Holding first = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		assertThatThrownBy(() -> holdingService.create("2330", 3, new BigDecimal("900")))
+				.isInstanceOf(DuplicateCodeException.class);
+
+		assertThat(tradeRepository.findAll()).hasSize(1)
+				.allSatisfy(trade -> assertThat(trade.getHoldingId()).isEqualTo(first.getId()));
+	}
+
+	@Test
+	void 修改持股_同步修改那一筆買進的股數與價格_日期不變() {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+		LocalDate originalDate = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(saved.getId()).get(0).getTradeDate();
+
+		holdingService.update(saved.getId(), 3, new BigDecimal("980.50"));
+		tradeRepository.flush();
+
+		List<Trade> trades = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(saved.getId());
+		assertThat(trades).hasSize(1);
+		assertThat(trades.get(0).getShares()).isEqualTo(3000L);
+		assertThat(trades.get(0).getPrice()).isEqualByComparingTo("980.50");
+		assertThat(trades.get(0).getTradeDate()).isEqualTo(originalDate);
+	}
+
+	@Test
+	void 刪除持股_連同交易紀錄一起刪除() {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		holdingService.delete(saved.getId());
+		holdingRepository.flush(); // 立刻寫入資料庫：外鍵若擋下（先刪持股、後刪交易）會在這裡出錯
+
+		assertThat(holdingRepository.existsById(saved.getId())).isFalse();
+		assertThat(tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(saved.getId())).isEmpty();
 	}
 
 	@Test

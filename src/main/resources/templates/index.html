@@ -11,9 +11,16 @@
 				<p class="text-muted mb-1">目前時間（台北時間）</p>
 				<p class="fs-4 app-number mb-4" th:text="${now}">2026-11-20 09:00:00</p>
 				<p class="text-muted">記下你買了哪些股票，用官方收盤價算出「如果現在全部賣掉，淨賺或淨虧多少」。</p>
-				<a class="btn btn-primary btn-lg mt-2" th:href="@{/holdings}">
-					<i class="bi bi-list-ul me-1"></i>前往持股清單
+				<!--/*
+					2.0（第 6 題 C8-2 a）：主要按鈕改到新網頁。首頁本身不轉址，因為第 1 題要求首頁顯示標題與台北時間（R1-2、R1-3）；
+					第一版網頁照舊保留，改成次要連結。
+				*/-->
+				<a class="btn btn-primary btn-lg mt-2" th:href="@{/v2}">
+					<i class="bi bi-list-ul me-1"></i>前往持股記帳 2.0
 				</a>
+				<div class="mt-3 small">
+					<a th:href="@{/holdings}">第一版持股清單（以「張」顯示）</a>
+				</div>
 			</div>
 		</div>
 	</main>

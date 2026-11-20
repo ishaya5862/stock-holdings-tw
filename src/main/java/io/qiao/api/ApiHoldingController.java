@@ -108,8 +108,8 @@ public class ApiHoldingController {
 		return view;
 	}
 
-	/** App 看得到的持股：市場別已知（6A） */
+	/** App 看得到的持股：市場別已知（6A），而且資料沒有異常（朋友回饋 1-2 a：算不出張數、買進價，不給 App 錯的數字） */
 	private static List<HoldingView> exposable(List<HoldingView> views) {
-		return views.stream().filter(view -> view.market() != null).toList();
+		return views.stream().filter(view -> view.market() != null && !view.hasDataError()).toList();
 	}
 }

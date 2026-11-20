@@ -1,6 +1,8 @@
 package io.qiao.api;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -18,10 +20,22 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import com.fasterxml.jackson.databind.JsonMappingException;
 
+import io.qiao.api.v2.IdempotencyKeyReusedException;
+import io.qiao.api.v2.IdempotencyKeys;
+import io.qiao.api.v2.RequestFieldsException;
+import io.qiao.calculation.OversellException;
 import io.qiao.exception.DuplicateCodeException;
+import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.IdempotencyInProgressException;
+import io.qiao.exception.InvalidTradeException;
+import io.qiao.exception.TradeNotFoundException;
+import io.qiao.exception.TradeVersionConflictException;
+import io.qiao.exception.NotHeldException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
+import io.qiao.exception.UpgradeRequiredException;
+import io.qiao.exception.UseApiV2Exception;
 
 /**
  * API 的統一錯誤處理：所有錯誤一律回 {"error":{"code","message"}}（App 1.0 規格）。
@@ -56,6 +70,91 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(StockNotFoundException.class)
 	public ResponseEntity<ApiErrorResponse> handleStockNotFound(StockNotFoundException e) {
 		return error(ApiErrorCode.STOCK_NOT_FOUND, e.getMessage());
+	}
+
+	/** 2.0：1.0 無法修改或刪除這筆持股 → 409，訊息請使用者更新到 App 2.0（N-a） */
+	@ExceptionHandler(UpgradeRequiredException.class)
+	public ResponseEntity<ApiErrorResponse> handleUpgradeRequired(UpgradeRequiredException e) {
+		return error(ApiErrorCode.UPGRADE_REQUIRED, e.getMessage());
+	}
+
+	/** 2.0（v2）：請求欄位格式錯誤 → 400，fields 標出每個錯誤欄位（C6-4 b），message 是合併的一句 */
+	@ExceptionHandler(RequestFieldsException.class)
+	public ResponseEntity<ApiErrorResponse> handleRequestFields(RequestFieldsException e) {
+		return ResponseEntity.status(ApiErrorCode.VALIDATION_ERROR.status())
+				.body(ApiErrorResponse.withFields(ApiErrorCode.VALIDATION_ERROR, e.getMessage(), e.fields()));
+	}
+
+	/** 2.0（v2）：股數、價格、日期不合規則（例如晚於今天、超過上限）→ 400，fields 標出是哪個欄位 */
+	@ExceptionHandler(InvalidTradeException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidTrade(InvalidTradeException e) {
+		return ResponseEntity.status(ApiErrorCode.VALIDATION_ERROR.status())
+				.body(ApiErrorResponse.withFields(ApiErrorCode.VALIDATION_ERROR, e.getMessage(),
+						Map.of(e.field(), e.getMessage())));
+	}
+
+	/** 2.0（v2）：賣超 → 409 OVERSELL，附哪一天、當時持有多少（C6-5 a），App 可以直接告訴使用者 */
+	@ExceptionHandler(OversellException.class)
+	public ResponseEntity<ApiErrorResponse> handleOversell(OversellException e) {
+		Map<String, Object> details = new LinkedHashMap<>();
+		details.put("trade_date", e.trade().tradeDate().toString());
+		details.put("held_before", e.heldBefore());
+		// 有推估日期的買進可能是原因（朋友回饋 2-1 a）：附上 id、日期、版本號，App 可以直接帶使用者去修改那筆買進
+		if (!e.estimatedBuys().isEmpty()) {
+			details.put("estimated_buys", e.estimatedBuys().stream()
+					.map(buy -> Map.of("id", buy.id(), "trade_date", buy.tradeDate().toString(), "version", buy.version()))
+					.toList());
+		}
+		return ResponseEntity.status(ApiErrorCode.OVERSELL.status())
+				.body(ApiErrorResponse.withDetails(ApiErrorCode.OVERSELL, e.getMessage(), details));
+	}
+
+	@ExceptionHandler(TradeNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> handleTradeNotFound(TradeNotFoundException e) {
+		return error(ApiErrorCode.TRADE_NOT_FOUND, e.getMessage());
+	}
+
+	@ExceptionHandler(TradeVersionConflictException.class)
+	public ResponseEntity<ApiErrorResponse> handleVersionConflict(TradeVersionConflictException e) {
+		return error(ApiErrorCode.VERSION_CONFLICT, e.getMessage());
+	}
+
+	/** 2.0（v2，C7）：Idempotency-Key 缺少或格式不對 → 400 */
+	@ExceptionHandler(IdempotencyKeys.IdempotencyKeyException.class)
+	public ResponseEntity<ApiErrorResponse> handleIdempotencyKey(IdempotencyKeys.IdempotencyKeyException e) {
+		return error(e.missing() ? ApiErrorCode.IDEMPOTENCY_KEY_REQUIRED : ApiErrorCode.IDEMPOTENCY_KEY_INVALID,
+				e.getMessage());
+	}
+
+	/** 2.0（v2，C7）：同一個 key 用在不同內容 → 422 */
+	@ExceptionHandler(IdempotencyKeyReusedException.class)
+	public ResponseEntity<ApiErrorResponse> handleIdempotencyKeyReused(IdempotencyKeyReusedException e) {
+		return error(ApiErrorCode.IDEMPOTENCY_KEY_REUSED, e.getMessage());
+	}
+
+	/** 2.0（v2，C7）：同一個 key 的前一個請求還在處理 → 409 */
+	@ExceptionHandler(IdempotencyInProgressException.class)
+	public ResponseEntity<ApiErrorResponse> handleIdempotencyInProgress(IdempotencyInProgressException e) {
+		return error(ApiErrorCode.IDEMPOTENCY_KEY_IN_PROGRESS, IdempotencyInProgressException.USER_MESSAGE);
+	}
+
+	/** 2.0（v2）：目前沒有持有這個代號 → 404 NOT_HELD（例：「目前沒有持有 2330」） */
+	@ExceptionHandler(NotHeldException.class)
+	public ResponseEntity<ApiErrorResponse> handleNotHeld(NotHeldException e) {
+		return error(ApiErrorCode.NOT_HELD, e.getMessage());
+	}
+
+	/** 2.0：等鎖超過 3 秒（例如手機與電腦同時操作同一檔）→ 409，App 1.0 會顯示「資料正在更新，請稍後再試」 */
+	@ExceptionHandler(HoldingBusyException.class)
+	public ResponseEntity<ApiErrorResponse> handleHoldingBusy(HoldingBusyException e) {
+		log.warn("等鎖逾時：{}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+		return error(ApiErrorCode.HOLDING_BUSY, HoldingBusyException.USER_MESSAGE);
+	}
+
+	/** 2.0：App 2.0 呼叫了 v1（M4） */
+	@ExceptionHandler(UseApiV2Exception.class)
+	public ResponseEntity<ApiErrorResponse> handleUseApiV2(UseApiV2Exception e) {
+		return error(ApiErrorCode.USE_API_V2, e.getMessage());
 	}
 
 	@ExceptionHandler(QuoteUnavailableException.class)

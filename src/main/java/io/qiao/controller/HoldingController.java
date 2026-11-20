@@ -18,6 +18,7 @@ import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
+import io.qiao.exception.UpgradeRequiredException;
 import io.qiao.service.HoldingService;
 import io.qiao.validation.StockCodes;
 import jakarta.validation.Valid;
@@ -102,9 +103,14 @@ public class HoldingController {
 	@GetMapping("/{id}/edit")
 	public String editForm(@PathVariable Long id, Model model) {
 		HoldingView holding = holdingService.findViewById(id);
+		// 2.0：有零股、多次買進或賣出紀錄的持股，第一版的「張數＋買進價」表單無法正確修改（C4-3、C4-8）
+		// → 回到清單並說明原因（WebExceptionHandler），和 App 1.0 的規則相同
+		if (!holding.v1Representable()) {
+			throw new UpgradeRequiredException(holding.code(), "修改", holding.v1Limits());
+		}
 
 		HoldingForm form = new HoldingForm();
-		form.setLots(holding.lots());
+		form.setLots(Math.toIntExact(holding.lots())); // 1.0 可完整表達的持股一定是 1～999 張
 		form.setBuyPrice(holding.buyPrice());
 
 		model.addAttribute("holdingForm", form);

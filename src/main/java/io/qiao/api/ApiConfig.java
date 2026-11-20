@@ -7,6 +7,8 @@ import org.springframework.boot.autoconfigure.web.servlet.error.ErrorViewResolve
 import org.springframework.boot.web.servlet.error.ErrorAttributes;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.fasterxml.jackson.databind.cfg.CoercionAction;
 import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
@@ -16,7 +18,13 @@ import com.fasterxml.jackson.databind.type.LogicalType;
  * API 相關設定。
  */
 @Configuration
-public class ApiConfig {
+public class ApiConfig implements WebMvcConfigurer {
+
+	/** 2.0：/api/v1 的回應加上「已淘汰」標頭（M3），並擋下 App 2.0 的誤用（M4） */
+	@Override
+	public void addInterceptors(InterceptorRegistry registry) {
+		registry.addInterceptor(new ApiV1DeprecationInterceptor()).addPathPatterns("/api/v1/**");
+	}
 
 	/**
 	 * 註冊自己的 ErrorController 後，Spring Boot 就不會再建立預設的 BasicErrorController

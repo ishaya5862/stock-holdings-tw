@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!--
+	持股記帳 2.0：持股總覽（第 6 題 C8）。版面依 2026-11-20 預覽版（qiao/preview-v2/v2-preview.html）：
+	S4（Bootstrap 5）、Logo L2、配色 T1、只做電腦版；台股慣例紅色是賺、綠色是虧。
+	資料是 App 2.0 API 的回應物件（HoldingV2Response、SummaryV2Response），金額到「分」。
+-->
+<html lang="zh-Hant" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{v2/fragments :: head('持股總覽')}"></head>
+<body>
+	<nav th:replace="~{v2/fragments :: navbar('overview')}"></nav>
+
+	<main class="container py-4">
+		<div th:replace="~{v2/fragments :: flash}"></div>
+
+		<div class="d-flex align-items-center mb-3">
+			<h1 class="h4 mb-0 me-auto">持股總覽</h1>
+			<a class="btn btn-v2" th:href="@{/v2/buy}"><i class="bi bi-plus-lg me-1"></i>記一筆買進</a>
+		</div>
+
+		<!--/*
+			摘要卡（規則和 App 2.0 的 /api/v2/summary 相同）：
+			- 持有成本：持有中（股數 > 0）的成本加總，取不到收盤價的也算
+			- 市值、未實現：只算有收盤價的持股；收益率 = 未實現 ÷ 持有成本
+			- 已實現：全部持股（含已全部賣出）的歷次賣出加總
+		*/-->
+		<div class="row g-3 mb-2" id="summary">
+			<div class="col">
+				<div class="v2-stat">
+					<div class="v2-stat-label">持有成本（含買進手續費）</div>
+					<div class="v2-stat-value v2-num text-start" th:text="${@v2Formats.money(summary.totalCost)}">654,429.75</div>
+				</div>
+			</div>
+			<div class="col">
+				<div class="v2-stat">
+					<div class="v2-stat-label">市值</div>
+					<div class="v2-stat-value v2-num text-start" th:text="${@v2Formats.money(summary.marketValue)}">678,450.00</div>
+				</div>
+			</div>
+			<div class="col">
+				<div class="v2-stat">
+					<div class="v2-stat-label" title="假設用收盤價全部賣出，已扣賣出手續費與證交稅">未實現損益（已扣稅費）</div>
+					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.unrealizedPnl)}">
+						<span th:text="${@v2Formats.signedMoney(summary.unrealizedPnl)}">+21,359.25</span>
+						<small class="fs-6" th:text="${@v2Formats.signedPct(summary.returnPct)}">+3.26%</small>
+					</div>
+				</div>
+			</div>
+			<div class="col">
+				<div class="v2-stat">
+					<div class="v2-stat-label">已實現損益（累計）</div>
+					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.realizedPnl)}"
+						th:text="${@v2Formats.signedMoney(summary.realizedPnl)}">+17,135.75</div>
+				</div>
+			</div>
+		</div>
+		<div class="small text-secondary mb-4">
+			<div th:if="${summary.quoteMissing > 0}">
+				<i class="bi bi-info-circle me-1"></i><span th:text="${summary.quoteMissing}">1</span>
+				檔未取得收盤價，未計入市值與未實現損益（持有成本仍包含）
+			</div>
+			<div th:if="${summary.dataErrorCount > 0}" class="text-danger">
+				<i class="bi bi-exclamation-triangle me-1"></i><span th:text="${summary.dataErrorCount}">1</span>
+				檔交易資料異常、暫時無法計算，未計入任何金額；請點該檔的「明細」修正
+			</div>
+		</div>
+
+		<div class="v2-section">
+			<div class="v2-section-header d-flex">
+				<span class="me-auto">持股</span>
+				<!--/* 已全部賣出（0 股）的持股可以隱藏（C1-2 a）；記住選擇寫在 v2-page.js。沒有 0 股的持股就不顯示開關 */-->
+				<div class="form-check form-switch small fw-normal mb-0" th:if="${closedCount > 0}">
+					<input class="form-check-input" type="checkbox" id="show-closed" checked>
+					<label class="form-check-label" for="show-closed">
+						顯示已全部賣出（<span th:text="${closedCount}">1</span>）
+					</label>
+				</div>
+			</div>
+
+			<div th:if="${holdings.isEmpty()}" class="text-center text-secondary py-5">
+				目前沒有持股，按「記一筆買進」開始記錄
+			</div>
+
+			<table th:unless="${holdings.isEmpty()}" class="table table-hover align-middle v2-table">
+				<thead>
+					<tr>
+						<th class="ps-4">代號／名稱</th>
+						<th>市場</th>
+						<th class="v2-num">股數</th>
+						<th class="v2-num">平均成本</th>
+						<th class="v2-num">收盤價</th>
+						<th class="v2-num">市值</th>
+						<th class="v2-num">未實現損益</th>
+						<th class="v2-num">收益率</th>
+						<th class="v2-num">已實現損益</th>
+						<th class="text-end pe-4">操作</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr th:each="h : ${holdings}" th:with="closed=${h.shares == 0}"
+						th:classappend="${closed} ? 'v2-closed'" th:attr="data-code=${h.code}">
+						<td class="ps-4">
+							<strong th:text="${h.code}">2330</strong> <span th:text="${h.name}">台積電</span>
+							<span th:if="${closed}" class="badge text-bg-light border ms-1">已全部賣出</span>
+						</td>
+						<td th:text="${@v2Formats.market(h.market)}">上市</td>
+
+						<!--/* 資料異常（交易時間線不合理，正常操作不會發生）：整列顯示原因，請到明細修正（朋友回饋 1-1 a） */-->
+						<td th:if="${h.dataError != null}" colspan="7" class="text-danger">
+							<i class="bi bi-exclamation-triangle me-1"></i>資料異常，暫時無法計算：<span th:text="${h.dataError}">原因</span>
+						</td>
+
+						<th:block th:if="${h.dataError == null}">
+							<td class="v2-num" th:text="${@v2Formats.shares(h.shares)}">600</td>
+							<td class="v2-num" th:text="${@v2Formats.money(h.averageCost)}">613.37</td>
+							<td class="v2-num"><th:block th:replace="~{v2/fragments :: closePrice(${h})}"></th:block></td>
+							<td class="v2-num" th:text="${@v2Formats.money(h.marketValue)}">390,000.00</td>
+							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}"
+								th:text="${@v2Formats.signedMoney(h.unrealizedPnl)}">+20,252.25</td>
+							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
+								th:text="${@v2Formats.signedPct(h.returnPct)}">+5.50%</td>
+							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}"
+								th:text="${@v2Formats.signedMoney(h.realizedPnl)}">+16,706.75</td>
+						</th:block>
+
+						<td class="text-end pe-4">
+							<a class="btn btn-sm btn-outline-danger" th:href="@{/v2/buy(code=${h.code})}">買進</a>
+							<!--/* 0 股或資料異常不能賣：不顯示賣出 */-->
+							<a th:if="${h.shares != null and h.shares > 0}" class="btn btn-sm btn-outline-success"
+								th:href="@{/v2/sell(code=${h.code})}">賣出</a>
+							<a class="btn btn-sm btn-outline-secondary" th:href="@{/v2/holdings/{code}(code=${h.code})}">明細</a>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<p class="small text-secondary mt-2 mb-0">
+			金額到「分」：零股與部分賣出的成本依移動平均法分攤到分；手續費、證交稅依規定捨去到元。
+		</p>
+	</main>
+
+	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
+</body>
+</html>

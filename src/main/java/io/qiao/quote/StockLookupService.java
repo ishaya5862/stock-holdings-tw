@@ -1,6 +1,7 @@
 package io.qiao.quote;
 
 import java.time.Duration;
+import java.time.YearMonth;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -88,6 +89,54 @@ public class StockLookupService implements AutoCloseable {
 	}
 
 	/**
+	 * 某一個月，上市或上櫃有沒有這檔股票的成交（第 6 題 L2 b）。
+	 *
+	 * 用途：補登「已下市」股票的舊交易。lookup 只查近兩個月，已下市的股票一定查不到；
+	 * 這時改查「交易日期那個月」，那個月有成交 → 代號確實存在過，可以記錄（仍符合第 3 題「代號不存在不儲存」）。
+	 *
+	 * 規則和 lookup 相同：兩邊同時查、最多等 lookupTimeout；有一邊查到就用；
+	 * 兩邊都「確定查無」才回 empty；有一邊連不上又沒查到 → QuoteUnavailableException（不下結論）。
+	 * 早於來源最早月份的不查（證交所只提供 2010 年起）：只看另一邊的結果。
+	 *
+	 * @return 查到 → 那個月最後一個交易日的行情；可以查的來源都確定沒有 → empty
+	 * @throws QuoteUnavailableException 有一邊連不上（或超過時間），無法判斷
+	 */
+	public Optional<StockQuote> findInMonth(String code, YearMonth month) {
+		long deadline = System.nanoTime() + lookupTimeout.toNanos();
+		Future<Optional<StockQuote>> twseFuture = submitIfCovered(twseClient, code, month);
+		Future<Optional<StockQuote>> tpexFuture = submitIfCovered(tpexClient, code, month);
+		try {
+			Answer twse = twseFuture == null ? Answer.NOT_COVERED : await(twseFuture, deadline, code);
+			if (twse.quote().isPresent()) {
+				return twse.quote();
+			}
+			Answer tpex = tpexFuture == null ? Answer.NOT_COVERED : await(tpexFuture, deadline, code);
+			if (tpex.quote().isPresent()) {
+				return tpex.quote();
+			}
+			if (twse.confirmedNotFound() && tpex.confirmedNotFound()) {
+				return Optional.empty();
+			}
+			throw new QuoteUnavailableException("無法確認代號 " + code + " 在 " + month + " 是否有成交（有來源連不上）");
+		} finally {
+			if (twseFuture != null) {
+				twseFuture.cancel(true);
+			}
+			if (tpexFuture != null) {
+				tpexFuture.cancel(true);
+			}
+		}
+	}
+
+	/** 這個來源查得到這個月才送出查詢；查不到（太早）回傳 null */
+	private Future<Optional<StockQuote>> submitIfCovered(StockQuoteClient client, String code, YearMonth month) {
+		if (month.isBefore(client.earliestMonth())) {
+			return null;
+		}
+		return executor.submit(() -> client.fetchInMonth(code, month));
+	}
+
+	/**
 	 * 等某一邊的結果，最多等到 deadline。
 	 * 連不上、逾時、超過整體時間，一律回傳「沒查到、也不確定查無」。
 	 */
@@ -123,5 +172,10 @@ public class StockLookupService implements AutoCloseable {
 	 */
 	private record Answer(Optional<StockQuote> quote, boolean confirmedNotFound) {
 		static final Answer UNKNOWN = new Answer(Optional.empty(), false);
+		/**
+		 * 這個月份比來源最早的資料還早（例如證交所 2010 年以前）：沒有送出查詢。
+		 * 當成「這邊沒有」，結論只看另一邊；最後的錯誤訊息會說明「證交所只提供 2010 年起的資料」。
+		 */
+		static final Answer NOT_COVERED = new Answer(Optional.empty(), true);
 	}
 }

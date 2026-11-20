@@ -14,6 +14,16 @@
 
 		<div th:replace="~{fragments/layout :: flash}"></div>
 
+		<!--/* 2.0（第 6 題 C4-8、N-d）：第一版網頁保留，提示已推出 2.0，並連到新網頁（C8） */-->
+		<div class="alert alert-info d-flex align-items-start" role="note" id="v2-banner">
+			<i class="bi bi-stars me-2 fs-5"></i>
+			<div>
+				<strong>持股記帳 2.0 已推出：</strong>支援零股（用「股」記）、同一檔分多次買進、賣出一部分。
+				<a class="alert-link ms-1" th:href="@{/v2}">前往 2.0 網頁</a>
+				<div class="small">這個頁面是第一版（以「張」顯示）；有零股、多次買進或賣出紀錄的持股，請用 2.0 修改或刪除。</div>
+			</div>
+		</div>
+
 		<!--/*
 			總計卡片（第 4 題：頁面最上面顯示總計；台股慣例紅色是賺、綠色是虧）
 			- 沒有持股            → 「目前沒有持股，新增後即可計算盈虧」
@@ -56,6 +66,14 @@
 						<i class="bi bi-exclamation-circle me-1"></i>
 						<span th:text="${summary.quoteMissing}">1</span> 筆未取得收盤價，未計入市值與盈虧（總成本仍包含這幾筆）
 					</div>
+					<!--/*
+						2.0（C4-6 網頁附註 a）：只有「精確金額有分」的持股存在時才顯示（整張、一筆買進的資料金額一定是整數，不會有誤差）
+					*/-->
+					<div class="col-12 small text-muted" id="rounding-note" th:if="${#lists.contains(holdings.![hasCents], true)}">
+						<i class="bi bi-info-circle me-1"></i>
+						※ 金額四捨五入到元：2.0 起零股與部分賣出的金額會算到「分」，這個頁面（第一版）只顯示到「元」，
+						總計為各筆四捨五入後再加總，因此和 2.0 頁面的精確金額可能相差幾元。
+					</div>
 				</div>
 			</div>
 		</div>
@@ -89,10 +107,31 @@
 						</tr>
 					</thead>
 					<tbody>
-						<tr th:each="h : ${holdings}">
+						<th:block th:each="h : ${holdings}">
+						<!--/*
+							資料異常（朋友回饋 1-1 a）：交易時間線不合理（正常操作不會發生），算不出張數與金額
+							→ 整列顯示原因、不算進總計，請用 2.0 修正；其他持股照常顯示
+						*/-->
+						<tr th:if="${h.hasDataError()}" class="table-danger" data-error-row>
+							<td class="fw-semibold app-number" th:text="${h.code}">2330</td>
+							<td th:text="${h.name} ?: '—'">台積電</td>
+							<td colspan="7" class="small">
+								<i class="bi bi-exclamation-octagon"></i>
+								資料異常，暫時無法計算（未計入總計）：<span th:text="${h.dataError}">2026-11-20 賣出 1000 股，但當時只持有 0 股</span>。
+								請用 2.0 檢查並修正這一檔的交易紀錄。
+							</td>
+						</tr>
+						<tr th:unless="${h.hasDataError()}">
 							<td class="fw-semibold app-number" th:text="${h.code}">2330</td>
 							<!--/* 名稱、市場：新增時從官方取得；第 2 題時新增的舊資料由背景排程補上，補上前顯示「—」 */-->
-							<td th:text="${h.name} ?: '—'">台積電</td>
+							<td>
+								<span th:text="${h.name} ?: '—'">台積電</span>
+								<!--/* 2.0：第一版（張數）表達不了的原因，和 App 1.0 名稱後的加註同一份規則（HoldingView.v1Limits） */-->
+								<div th:unless="${h.v1Representable()}" class="small text-warning-emphasis">
+									<i class="bi bi-exclamation-triangle"></i>
+									2.0：<span th:text="${#strings.listJoin(h.v1Limits, '、')}">含零股 500 股</span>
+								</div>
+							</td>
 							<td>
 								<span th:if="${h.market}" class="badge text-bg-secondary" th:text="${h.market.label}">上市</span>
 								<span th:unless="${h.market}" class="text-muted">—</span>
@@ -168,6 +207,7 @@
 								</form>
 							</td>
 						</tr>
+						</th:block>
 					</tbody>
 				</table>
 			</div>

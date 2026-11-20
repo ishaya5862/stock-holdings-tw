@@ -28,6 +28,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
 import io.qiao.exception.QuoteUnavailableException;
@@ -362,7 +363,7 @@ class HoldingControllerTest {
 
 		Holding updated = holdingService.findById(saved.getId());
 		assertThat(updated.getCode()).isEqualTo("2330");
-		assertThat(updated.getLots()).isEqualTo(5);
+		assertThat(holdingService.findViewById(saved.getId()).lots()).isEqualTo(5L);
 	}
 
 	// ===== 修改頁：代號只顯示、不放輸入框 =====
@@ -433,9 +434,9 @@ class HoldingControllerTest {
 				.andExpect(redirectedUrl("/holdings"))
 				.andExpect(flash().attribute("successMessage", "已修改 2330"));
 
-		Holding updated = holdingService.findById(saved.getId());
-		assertThat(updated.getLots()).isEqualTo(3);
-		assertThat(updated.getBuyPrice()).isEqualByComparingTo("950");
+		HoldingView updated = holdingService.findViewById(saved.getId()); // 2.0：張數、買進價改由交易紀錄算出
+		assertThat(updated.lots()).isEqualTo(3L);
+		assertThat(updated.buyPrice()).isEqualByComparingTo("950");
 	}
 
 	@Test
