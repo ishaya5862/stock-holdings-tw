@@ -43,3 +43,6 @@ Thumbs.db
 ### 本機私密設定 ###
 application-local.properties
 .env
+
+### 本機資料（H2 等） ###
+data/

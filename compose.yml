@@ -1,0 +1,34 @@
+# MySQL 資料庫（Docker Compose）
+# - 用 mvnw spring-boot:run 啟動程式時，Spring Boot 會自動執行這個檔案，不需手動啟動。
+# - 也可以手動啟動：docker compose up -d
+#
+# 密碼採「環境變數 + 開發用預設值」：
+#   預設值只是本機開發用的假密碼，不是真實密碼；正式環境請用環境變數覆蓋。
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: stock_holdings
+      MYSQL_USER: app
+      MYSQL_PASSWORD: ${DB_PASSWORD:-devpass}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootdevpass}
+      # 資料庫的時區也設成台北，避免直接查資料庫時看到的時間差 8 小時
+      TZ: Asia/Taipei
+    ports:
+      # 只寫容器內的 3306，電腦這端的埠號由 Docker 自動挑一個空的。為什麼不寫死 3306 / 3307？
+      # 1. 電腦上可能已經裝了 MySQL，佔用 3306。
+      # 2. Windows（開啟 Hyper-V / WSL 時）會把一段段埠號保留給系統，每次開機範圍都可能不同，
+      #    寫死的埠號可能被擋（實測 3306、3307 都落在保留範圍內，容器無法啟動）。
+      # Spring Boot 會自動查出實際埠號並連線；要用資料庫工具連線時，用 docker compose port mysql 3306 查詢。
+      - "3306"
+    volumes:
+      # 資料存在 Docker volume：容器關掉、重開資料都還在
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql-data:
