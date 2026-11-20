@@ -29,6 +29,9 @@ import io.qiao.repository.IdempotencyRecordRepository;
  *   等超過 3 秒（等鎖上限）→ IdempotencyInProgressException（409，請稍後用同一個 key 再送）。
  *
  * 有效期限 24 小時（B-27：涵蓋所有合理的重送，表不會無限變大）；過期的同一個 key 當成新請求。
+ *
+ * 2026-11-21 修正（朋友在真 MySQL 的同時測試，B-39 F1 a）：佔 key 改成「先查、不存在就直接新增」，
+ * 不再先刪除（刪除不存在的列會鎖間隙，不同的 key 會互相死結）。H2 沒有間隙鎖，單元測試測不出來。
  */
 @Component
 public class IdempotencyGuard {
@@ -55,8 +58,22 @@ public class IdempotencyGuard {
 	 */
 	public IdempotencyRecord claim(IdempotencyRequest request) {
 		LocalDateTime now = LocalDateTime.now(clock);
-		repository.deleteExpired(request.key(), now.minus(RETENTION)); // 過期的同一個 key → 當成新請求
+		LocalDateTime expiredBefore = now.minus(RETENTION);
+		// 整段都在 try 裡：任何一步等鎖逾時（同一個 key 的前一個請求佔住超過 3 秒）都回 409，不會變成 500（朋友回饋 2）
 		try {
+			// 1. 先用「不上鎖的查詢」看這個 key 有沒有紀錄（MySQL REPEATABLE READ 的一般 SELECT 是快照讀取，不鎖任何東西）。
+			//    為什麼不像原本「先刪過期的再新增」：用主鍵刪除「不存在的列」時，MySQL 會鎖住索引上的一段間隙，
+			//    兩個不同的 key 落在同一段間隙就會互等、死結（1213），被誤判成「同一個 key 還在處理」（朋友回饋 1）。
+			Optional<IdempotencyRecord> existing = repository.findById(request.key());
+			if (existing.isPresent()) {
+				if (!existing.get().getCreatedAt().isBefore(expiredBefore)) {
+					throw new IdempotencyKeyUsedException(request.key()); // 還在有效期限內 → API 層判斷重送或 422
+				}
+				// 2. 過期的同一個 key → 刪掉那一列（列確實存在，只鎖那一列，不會鎖間隙）再當成新請求
+				repository.deleteExpired(request.key(), expiredBefore);
+			}
+			// 3. 新增。另一個請求剛好也在新增同一個 key（還沒提交，上面查不到）→ 這裡會等對方：
+			//    對方提交 → 主鍵重複；等超過 3 秒 → 等鎖逾時
 			return repository.saveAndFlush(new IdempotencyRecord(request.key(), request.requestHash(),
 					request.method(), request.path(), request.responseStatus(), now));
 		} catch (DataIntegrityViolationException e) {

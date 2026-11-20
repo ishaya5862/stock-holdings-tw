@@ -1,5 +1,6 @@
 package io.qiao.controller;
 
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -38,8 +39,11 @@ public class WebExceptionHandler {
 		return "redirect:/holdings";
 	}
 
-	/** 2.0：同一檔正在被另一個裝置寫入，等鎖超過 3 秒 → 回清單請稍後再試（C3-2） */
-	@ExceptionHandler(HoldingBusyException.class)
+	/**
+	 * 2.0：同一檔正在被另一個裝置寫入，等鎖超過 3 秒 → 回清單請稍後再試（C3-2）。
+	 * 其他地方的等鎖逾時或死結（PessimisticLockingFailureException）也一樣處理，不顯示錯誤頁（朋友回饋 2）。
+	 */
+	@ExceptionHandler({ HoldingBusyException.class, PessimisticLockingFailureException.class })
 	public String handleBusy(HttpServletRequest request) {
 		RequestContextUtils.getOutputFlashMap(request).put("errorMessage", HoldingBusyException.USER_MESSAGE);
 		return "redirect:/holdings";

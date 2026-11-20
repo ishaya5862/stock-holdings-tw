@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -148,6 +149,17 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(HoldingBusyException.class)
 	public ResponseEntity<ApiErrorResponse> handleHoldingBusy(HoldingBusyException e) {
 		log.warn("等鎖逾時：{}", e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+		return error(ApiErrorCode.HOLDING_BUSY, HoldingBusyException.USER_MESSAGE);
+	}
+
+	/**
+	 * 其他地方的等鎖逾時或死結（MySQL 1205、1213）：資料庫已把這個請求整個復原，資料沒有寫壞。
+	 * 回 409「資料正在更新，請稍後再試」，不讓它落到最後的 500（朋友回饋 2）。
+	 * 持股鎖（HoldingLock）與佔 key（IdempotencyGuard）已在原處轉成更明確的錯誤，這裡是最後一道保險。
+	 */
+	@ExceptionHandler(PessimisticLockingFailureException.class)
+	public ResponseEntity<ApiErrorResponse> handleLockFailure(PessimisticLockingFailureException e) {
+		log.warn("等鎖逾時或死結，請用戶端稍後再試：{}", e.getMessage());
 		return error(ApiErrorCode.HOLDING_BUSY, HoldingBusyException.USER_MESSAGE);
 	}
 

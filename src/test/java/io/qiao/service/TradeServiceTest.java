@@ -339,6 +339,31 @@ class TradeServiceTest {
 	}
 
 	@Test
+	void 金額規則_單筆最多100億元_防多打0() {
+		// 朋友回饋 3：股數、價格各自都在上限內，但相乘超過 100 億 → 擋下（App 1.0 的金額才不會超出 JSON 精確範圍）
+		assertInvalid(() -> tradeService.buy("2330", D1, 10_000_001L, new BigDecimal("1000.00")), "shares",
+				"單筆成交金額（股數 × 價格）最多 100 億元，請確認股數與價格是否多打了 0");
+		assertInvalid(() -> tradeService.buy("2330", D1, 99_999_999L, new BigDecimal("99999999.99")), "shares",
+				"單筆成交金額（股數 × 價格）最多 100 億元，請確認股數與價格是否多打了 0");
+		// 剛好 100 億可以
+		assertThat(tradeService.buy("2330", D1, 10_000_000L, new BigDecimal("1000.00")).position().shares())
+				.isEqualTo(10_000_000L);
+	}
+
+	@Test
+	void 金額上限也適用於修改_不能把舊交易改成超過100億() {
+		Trade trade = tradeService.buy("2330", D1, 1000, new BigDecimal("600.00")).trade();
+		assertInvalid(() -> tradeService.updateTrade(trade.getId(), trade.getVersion(), D1, 20_000_000L,
+				new BigDecimal("600.00")), "shares", "單筆成交金額（股數 × 價格）最多 100 億元，請確認股數與價格是否多打了 0");
+	}
+
+	@Test
+	void App1點0新增照1點0規格_不受100億上限影響() {
+		// 1.0 規格允許 999 張 × 99,999,999.99 元（約 99 兆），v1 的新增不經過 2.0 的金額上限
+		assertThat(holdingService.create("2330", 999, new BigDecimal("99999999.99")).getId()).isNotNull();
+	}
+
+	@Test
 	void 日期規則_1990年起_不能晚於台北時間的今天() {
 		LocalDate today = LocalDate.now(clock); // TimeConfig 的 Clock 是台北時區：主機在海外也一樣
 		assertInvalid(() -> tradeService.buy("2330", today.plusDays(1), 100, new BigDecimal("600")), "trade_date",

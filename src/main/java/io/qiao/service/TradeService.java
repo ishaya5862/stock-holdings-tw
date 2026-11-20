@@ -10,8 +10,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import io.qiao.calculation.OversellException;
@@ -52,10 +55,19 @@ import io.qiao.validation.StockCodes;
 @Service
 public class TradeService {
 
+	private static final Logger log = LoggerFactory.getLogger(TradeService.class);
+
 	/** 每筆交易的股數上限（V-b：防打錯，一般投資人碰不到；1.0 的 1～999 張另外在 v1 檢查） */
 	public static final long MAX_SHARES = 99_999_999L;
 	/** 價格上限（和資料表 DECIMAL(10,2) 一致） */
 	public static final BigDecimal MAX_PRICE = new BigDecimal("99999999.99");
+	/**
+	 * 單筆成交金額（股數 × 價格）上限 100 億元（朋友回饋 3，B-39 F3 a）。
+	 * 為什麼：股數、價格各自的上限相乘約 10^16 元，多打幾個 0 也存得進去，App 1.0（v1）的金額會超過
+	 * JSON 數字能精確表示的範圍（約 9×10^15）。100 億元一般投資人單筆不可能超過；就算累加 90 萬筆仍在安全範圍。
+	 * 只限制 2.0 的寫入；App 1.0 的新增照 1.0 規格（1～999 張、買進價上限），不受影響。
+	 */
+	public static final BigDecimal MAX_AMOUNT = new BigDecimal("10000000000");
 	/** 最早的交易日期（題目 1 a；資料庫也有同樣的 CHECK） */
 	public static final LocalDate EARLIEST_DATE = LocalDate.of(1990, 1, 1);
 	/** 買進最多試幾次（持股在交錯操作中被建立或刪除時重試；有上限，不會無限重試） */
@@ -84,8 +96,25 @@ public class TradeService {
 		this.stockLookupService = stockLookupService;
 		this.quoteCache = quoteCache;
 		this.positionCalculator = positionCalculator;
-		this.transactionTemplate = transactionTemplate;
+		this.transactionTemplate = readCommitted(transactionTemplate);
 		this.clock = clock;
+	}
+
+	/**
+	 * 2.0 寫入（買、賣、改、刪）的資料庫交易一律用 READ COMMITTED（2026-11-21 B-40 G1 a）。
+	 *
+	 * 為什麼：MySQL 預設的 REPEATABLE READ 會在交易裡「第一次一般查詢」時拍下快照，之後都讀那張快照。
+	 * 佔 key 時先查 key 在不在（為了避開間隙鎖，朋友回饋 1）讓快照在「拿持股鎖之前」就拍下 →
+	 * 排隊等鎖的請求拿到鎖後讀到舊的交易紀錄，看不到前一筆剛賣出的 → 同時賣出時賣超（真 MySQL 實測抓到）。
+	 * READ COMMITTED 每一句都讀「最新已提交」的資料：拿到持股鎖之後讀的一定是最新的交易紀錄；
+	 * 而且 MySQL 在這個等級下查詢、刪除不鎖間隙，不同 key 也不會再互相死結。
+	 * 只限這裡的寫入交易；讀取（總覽、API 的 GET）仍是 REPEATABLE READ 的一致快照，數字彼此一致。
+	 * PostgreSQL、Oracle、SQL Server 的預設都是 READ COMMITTED，「READ COMMITTED＋先鎖要改的列」是常見的寫入做法。
+	 */
+	private static TransactionTemplate readCommitted(TransactionTemplate shared) {
+		TransactionTemplate template = new TransactionTemplate(shared.getTransactionManager());
+		template.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+		return template;
 	}
 
 	// ===== 買進 =====
@@ -347,6 +376,7 @@ public class TradeService {
 	 * 股數、價格、日期的硬性規則（不合格就不儲存）：
 	 * | 股數 | 1～99,999,999 股（超過時說明「數量更大請分成多筆記錄」，P2）               |
 	 * | 價格 | 大於 0、最多兩位小數、最大 99,999,999.99                                    |
+	 * | 金額 | 股數 × 價格最多 100 億元（防多打 0；App 1.0 金額不超出 JSON 精確範圍）      |
 	 * | 日期 | 1990-01-01 起，不能晚於「台北時間」的今天（主機在海外也以台北為準）          |
 	 * 週末、休市日都可以儲存（題目 1 a）；「這天可能不是交易日，確定嗎？」的提醒由前端負責（題目 1 d，使用者決定）。
 	 */
@@ -365,6 +395,10 @@ public class TradeService {
 		}
 		if (price.compareTo(MAX_PRICE) > 0) {
 			throw new InvalidTradeException("price", "價格最大 99,999,999.99");
+		}
+		if (price.multiply(BigDecimal.valueOf(shares)).compareTo(MAX_AMOUNT) > 0) {
+			// 欄位標在 shares：多打 0 最常發生在股數；訊息請使用者兩個都確認
+			throw new InvalidTradeException("shares", "單筆成交金額（股數 × 價格）最多 100 億元，請確認股數與價格是否多打了 0");
 		}
 		if (tradeDate == null) {
 			throw new InvalidTradeException("trade_date", "請輸入交易日期");
@@ -426,8 +460,17 @@ public class TradeService {
 	/** 交易提交後，用資料庫裡的最終資料重算一次（新交易已有 id，明細的順序和之後查詢的一致） */
 	private TradeResult recalculated(TradeResult written) {
 		Holding holding = written.holding();
-		PositionResult position = calculate(holding, inputsOf(holding.getId()));
-		return new TradeResult(holding, written.trade(), position, false);
+		try {
+			PositionResult position = calculate(holding, inputsOf(holding.getId()));
+			return new TradeResult(holding, written.trade(), position, false);
+		} catch (OversellException e) {
+			// 這裡是「已經提交之後」的重新計算：寫入已經成功，不能再回報失敗（否則用戶端以為沒寫入，資料其實已存在）。
+			// 正常不會發生（寫入前已在持股鎖內整條驗證）；萬一發生（例如另一個裝置剛好改壞），照實記錄並回傳寫入結果，
+			// 讀取時那一檔會標成「資料異常」（朋友回饋 1-1 a）
+			log.error("寫入後重新計算失敗（寫入已提交）：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(),
+					e.getMessage());
+			return new TradeResult(holding, written.trade(), null, false);
+		}
 	}
 
 	private <T> T inTransaction(Supplier<T> work) {

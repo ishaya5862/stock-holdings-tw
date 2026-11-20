@@ -209,7 +209,9 @@
 						(function () { const m = V2Form.checkCode(code.value); V2Form.showError(code, m); return !m; })(),
 						dateField.check(),
 						quantity.check(),
-						(function () { const m = V2Form.parsePrice(price.value).error; V2Form.showError(price, m); return !m; })()
+						(function () { const m = V2Form.parsePrice(price.value).error; V2Form.showError(price, m); return !m; })(),
+						// 股數 × 價格最多 100 億元（防多打 0；朋友回饋 3）。要放在數量、價格檢查之後
+						V2Form.checkAmount(quantity, document.getElementById('quantity'), price)
 					];
 					return results.every(Boolean);
 				},

@@ -190,6 +190,16 @@ window.V2Form = (function () {
 		return { cents: cents };
 	}
 
+	/** 單筆成交金額上限 100 億元（以分計；和後端 TradeService.MAX_AMOUNT 相同，朋友回饋 3） */
+	const MAX_AMOUNT_CENTS = 1000000000000n;
+
+	/** 股數 × 價格超過 100 億元 → 錯誤訊息（防多打 0）；沒超過 → null */
+	function amountError(shares, cents) {
+		return shares * cents > MAX_AMOUNT_CENTS
+			? '單筆成交金額（股數 × 價格）最多 100 億元，請確認股數與價格是否多打了 0'
+			: null;
+	}
+
 	/** 分 → API 用的價格字串（60050 → "600.50"；API 的 price 是兩位小數字串，C6-6 a） */
 	function centsToPlain(cents) {
 		return (cents / 100n).toString() + '.' + (cents % 100n).toString().padStart(2, '0');
@@ -203,6 +213,23 @@ window.V2Form = (function () {
 		const negative = text.startsWith('-');
 		const cents = toCents(negative ? text.slice(1) : text);
 		return negative ? -cents : cents;
+	}
+
+	/**
+	 * 送出前檢查金額上限，錯誤顯示在數量欄（股數、價格本身有錯時不重複提示）。
+	 * @return 是否合格
+	 */
+	function checkAmount(quantityField, quantityInput, priceInput) {
+		const q = quantityField.shares();
+		const p = parsePrice(priceInput.value);
+		if (q.error || p.error) {
+			return true; // 由各自的欄位檢查顯示錯誤
+		}
+		const message = amountError(q.shares, p.cents);
+		if (message) {
+			showError(quantityInput, message);
+		}
+		return !message;
 	}
 
 	// ===== 日期、代號 =====
@@ -716,6 +743,8 @@ window.V2Form = (function () {
 		describeShares: describeShares,
 		parsePrice: parsePrice,
 		priceTypingError: priceTypingError,
+		amountError: amountError,
+		checkAmount: checkAmount,
 		centsToPlain: centsToPlain,
 		plainToCents: plainToCents,
 		checkDate: checkDate,
