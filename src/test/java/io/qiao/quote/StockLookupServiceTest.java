@@ -16,7 +16,7 @@ import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
 
 /**
- * 判斷上市／上櫃的測試。用假的查詢來源（FakeClient），不連網。
+ * 判斷上市／上櫃的測試。用假的查詢來源（FakeQuoteClient），不連網。
  */
 class StockLookupServiceTest {
 
@@ -95,22 +95,22 @@ class StockLookupServiceTest {
 	// ---- 假的查詢來源 ----
 
 	private static StockQuoteClient found(Market market, String name) {
-		return new FakeClient(market, code -> Optional.of(
+		return new FakeQuoteClient(market, code -> Optional.of(
 				new StockQuote(code, name, market, new BigDecimal("100.00"), LocalDate.of(2026, 11, 19))));
 	}
 
 	private static StockQuoteClient notFound(Market market) {
-		return new FakeClient(market, code -> Optional.empty());
+		return new FakeQuoteClient(market, code -> Optional.empty());
 	}
 
 	private static StockQuoteClient unavailable(Market market) {
-		return new FakeClient(market, code -> {
+		return new FakeQuoteClient(market, code -> {
 			throw new QuoteUnavailableException(market + " 連不上");
 		});
 	}
 
 	private static StockQuoteClient slow(Market market) {
-		return new FakeClient(market, code -> {
+		return new FakeQuoteClient(market, code -> {
 			try {
 				Thread.sleep(5000);
 			} catch (InterruptedException e) {
@@ -118,14 +118,5 @@ class StockLookupServiceTest {
 			}
 			return Optional.empty();
 		});
-	}
-
-	private record FakeClient(Market market, java.util.function.Function<String, Optional<StockQuote>> behavior)
-			implements StockQuoteClient {
-
-		@Override
-		public Optional<StockQuote> fetchLatest(String code) {
-			return behavior.apply(code);
-		}
 	}
 }

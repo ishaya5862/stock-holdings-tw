@@ -7,15 +7,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.client.RestClient;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * 建立呼叫證交所、櫃買中心用的 RestClient。
+ * 建立呼叫證交所、櫃買中心用的 RestClient 與相關元件。
+ *
+ * @EnableScheduling：啟用 @Scheduled 排程（QuoteRefreshScheduler）。
  */
 @Configuration
 @EnableConfigurationProperties(QuoteProperties.class)
+@EnableScheduling
 public class QuoteConfig {
 
 	/** 有些網站會擋沒有 User-Agent 或看起來像程式的請求，帶上一個明確的名稱 */
@@ -36,6 +40,12 @@ public class QuoteConfig {
 	public StockLookupService stockLookupService(TwseQuoteClient twseQuoteClient, TpexQuoteClient tpexQuoteClient,
 			QuoteProperties properties) {
 		return new StockLookupService(twseQuoteClient, tpexQuoteClient, properties.lookupTimeout());
+	}
+
+	/** 休市日行事曆（輔助用，查不到時退回「平日都有開盤」） */
+	@Bean
+	public TradingCalendar tradingCalendar(QuoteProperties properties, ObjectMapper objectMapper, Clock clock) {
+		return new TradingCalendar(restClient(properties.holidayBaseUrl(), properties), objectMapper, clock);
 	}
 
 	private RestClient restClient(String baseUrl, QuoteProperties properties) {

@@ -18,9 +18,15 @@ public interface StockQuoteClient {
 	/**
 	 * 查詢「官方已公布的最近一個交易日」的收盤價。
 	 *
+	 * @param throttle 控制每次請求的間隔（背景排程用；新增持股時用 RequestThrottle.NONE）
 	 * @return 查到 → 行情；這個市場沒有這檔股票 → Optional.empty()
 	 * @throws QuoteUnavailableException 連不上、逾時、回應格式不對等「無法判斷」的情況
 	 *         （和「查無此股票」要分開：連不上時不能說代號不存在）
 	 */
-	Optional<StockQuote> fetchLatest(String code);
+	Optional<StockQuote> fetchLatest(String code, RequestThrottle throttle);
+
+	/** 不限制請求間隔（新增持股時使用，要在 10 秒內有結果） */
+	default Optional<StockQuote> fetchLatest(String code) {
+		return fetchLatest(code, RequestThrottle.NONE);
+	}
 }

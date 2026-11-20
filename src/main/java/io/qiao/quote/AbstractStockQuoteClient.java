@@ -40,9 +40,11 @@ abstract class AbstractStockQuoteClient implements StockQuoteClient {
 	}
 
 	@Override
-	public Optional<StockQuote> fetchLatest(String code) {
+	public Optional<StockQuote> fetchLatest(String code, RequestThrottle throttle) {
 		YearMonth thisMonth = YearMonth.now(clock);
 		for (YearMonth month : List.of(thisMonth, thisMonth.minusMonths(1))) {
+			// 每一次請求前都先經過 throttle（排程時同一檔的「本月」「上個月」兩次請求也會間隔開）
+			throttle.beforeRequest();
 			MonthlyQuotes monthly = fetchMonth(code, month);
 			if (!monthly.dailyCloses().isEmpty()) {
 				// 清單已依日期排序，最後一筆就是「最近一個交易日」

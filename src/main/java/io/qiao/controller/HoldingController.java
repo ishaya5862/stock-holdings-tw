@@ -37,10 +37,10 @@ public class HoldingController {
 		this.holdingService = holdingService;
 	}
 
-	/** 清單 */
+	/** 清單（收盤價只讀記憶體快取，不會每次打開就查官方） */
 	@GetMapping
 	public String list(Model model) {
-		model.addAttribute("holdings", holdingService.findAll());
+		model.addAttribute("holdings", holdingService.findAllViews());
 		return "holdings/list";
 	}
 

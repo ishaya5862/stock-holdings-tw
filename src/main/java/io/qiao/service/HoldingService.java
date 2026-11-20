@@ -5,16 +5,19 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
+import io.qiao.quote.QuoteCache;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
@@ -28,17 +31,30 @@ public class HoldingService {
 
 	private final HoldingRepository holdingRepository;
 	private final StockLookupService stockLookupService;
+	private final QuoteCache quoteCache;
 	private final Clock clock;
 
-	public HoldingService(HoldingRepository holdingRepository, StockLookupService stockLookupService, Clock clock) {
+	public HoldingService(HoldingRepository holdingRepository, StockLookupService stockLookupService,
+			QuoteCache quoteCache, Clock clock) {
 		this.holdingRepository = holdingRepository;
 		this.stockLookupService = stockLookupService;
+		this.quoteCache = quoteCache;
 		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
 	public List<Holding> findAll() {
 		return holdingRepository.findAllByOrderByCodeAsc();
+	}
+
+	/**
+	 * 清單用：每筆持股加上快取裡的行情。只讀記憶體快取，不會向官方查詢（題目第 3 題要求 3）。
+	 */
+	@Transactional(readOnly = true)
+	public List<HoldingView> findAllViews() {
+		return holdingRepository.findAllByOrderByCodeAsc().stream()
+				.map(holding -> HoldingView.of(holding, quoteCache.get(holding.getCode()).orElse(null)))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -81,13 +97,18 @@ public class HoldingService {
 		holding.setCreatedAt(now);
 		holding.setUpdatedAt(now);
 
+		Holding saved;
 		try {
 			// saveAndFlush：立刻寫入資料庫，讓 UNIQUE 限制的錯誤在這裡就發生，才能轉成 DuplicateCodeException
-			return holdingRepository.saveAndFlush(holding);
+			saved = holdingRepository.saveAndFlush(holding);
 		} catch (DataIntegrityViolationException e) {
 			// 第二道檢查（最後防線）：兩個人「同時」新增同一個代號時，第一道檢查都會通過，由資料庫的 UNIQUE 限制擋下
 			throw new DuplicateCodeException(normalizedCode);
 		}
+
+		// 剛查到的行情直接放進快取：新增完回到清單就看得到收盤價，不用等排程
+		quoteCache.putSuccess(quote, now);
+		return saved;
 	}
 
 	/**
@@ -114,6 +135,32 @@ public class HoldingService {
 	public void delete(Long id) {
 		Holding holding = findById(id);
 		holdingRepository.delete(holding);
+		// 同一個代號只會有一筆持股，刪掉後快取也不需要了（排程只會查還在的持股）
+		quoteCache.remove(holding.getCode());
+	}
+
+	/**
+	 * 背景排程查到行情後呼叫：
+	 * 1. 第 2 題時新增、還沒有名稱或市場的持股，補上官方的名稱與市場。
+	 * 2. 更新「上次收盤價」（只在數字或日期有變時才寫入）。
+	 * 不更新 updated_at：那個欄位代表「使用者最後修改的時間」，排程更新行情不算使用者修改。
+	 * 持股在排程查詢期間被刪除時，直接略過。
+	 */
+	@Transactional
+	public void recordQuote(Long holdingId, StockQuote quote) {
+		holdingRepository.findById(holdingId).ifPresent(holding -> {
+			if (holding.getName() == null || holding.getMarket() == null) {
+				holding.setName(quote.name());
+				holding.setMarket(quote.market());
+			}
+			boolean priceChanged = holding.getLastClosePrice() == null
+					|| holding.getLastClosePrice().compareTo(quote.closePrice()) != 0
+					|| !Objects.equals(holding.getLastPriceDate(), quote.priceDate());
+			if (priceChanged) {
+				holding.setLastClosePrice(quote.closePrice());
+				holding.setLastPriceDate(quote.priceDate());
+			}
+		});
 	}
 
 	/**

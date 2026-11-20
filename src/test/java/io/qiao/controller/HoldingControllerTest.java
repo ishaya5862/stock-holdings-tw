@@ -1,6 +1,7 @@
 package io.qiao.controller;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
+import io.qiao.quote.QuoteCache;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
@@ -54,6 +57,42 @@ class HoldingControllerTest {
 
 	@MockitoBean
 	private StockLookupService stockLookupService;
+
+	@Autowired
+	private QuoteCache quoteCache;
+
+	@Test
+	void 清單收盤價_查詢成功_顯示收盤價與日期() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000")); // 新增時查到的行情會直接放進快取
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("1,100.00")))
+				.andExpect(content().string(containsString("11/19")))
+				// 反向檢查：查詢成功時不應出現其他狀態的文字（避免文字其實來自 HTML 註解而誤判通過）
+				.andExpect(content().string(not(containsString("未取得"))))
+				.andExpect(content().string(not(containsString("更新中"))));
+	}
+
+	@Test
+	void 清單收盤價_查詢失敗_顯示未取得與上次收盤價_整頁正常() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000"));
+		quoteCache.putUnavailable("2330", LocalDateTime.of(2026, 11, 20, 14, 0));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("未取得")))
+				.andExpect(content().string(containsString("上次收盤價")))
+				.andExpect(content().string(containsString("1,100.00")));
+	}
+
+	@Test
+	void 清單收盤價_啟動後還沒查過_顯示更新中() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000"));
+		quoteCache.remove("2330"); // 模擬伺服器剛重開、排程還沒輪到
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("更新中")));
+	}
 
 	@BeforeEach
 	void setUp() {

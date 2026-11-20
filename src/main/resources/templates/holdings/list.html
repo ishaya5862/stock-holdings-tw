@@ -14,6 +14,11 @@
 
 		<div th:replace="~{fragments/layout :: flash}"></div>
 
+		<p class="small text-muted mb-2">
+			<i class="bi bi-info-circle"></i>
+			收盤價取自證交所、櫃買中心公布的最近一個交易日，每 10 分鐘在背景自動更新（重新整理頁面即可看到最新結果）。
+		</p>
+
 		<div class="card app-card">
 			<!-- 沒有持股時的提示 -->
 			<div th:if="${#lists.isEmpty(holdings)}" class="card-body text-center text-muted py-5">
@@ -30,13 +35,14 @@
 							<th>市場</th>
 							<th class="text-end">張數</th>
 							<th class="text-end">買進價</th>
+							<th class="text-end">收盤價</th>
 							<th class="text-end">操作</th>
 						</tr>
 					</thead>
 					<tbody>
 						<tr th:each="h : ${holdings}">
 							<td class="fw-semibold app-number" th:text="${h.code}">2330</td>
-							<!-- 名稱、市場要到第 3 題串接官方行情後才有值，先顯示「—」 -->
+							<!--/* 名稱、市場：新增時從官方取得；第 2 題時新增的舊資料由背景排程補上，補上前顯示「—」 */-->
 							<td th:text="${h.name} ?: '—'">台積電</td>
 							<td>
 								<span th:if="${h.market}" class="badge text-bg-secondary" th:text="${h.market.label}">上市</span>
@@ -45,6 +51,35 @@
 							<td class="text-end app-number" th:text="${#numbers.formatInteger(h.lots, 1, 'COMMA')}">1</td>
 							<td class="text-end app-number"
 								th:text="${#numbers.formatDecimal(h.buyPrice, 1, 'COMMA', 2, 'POINT')}">1,000.00</td>
+							<!--/*
+								收盤價：依行情狀態顯示（這種 Thymeleaf 註解不會送到瀏覽器）
+								OK          → 收盤價 + 日期
+								UPDATING    → 更新中…（這次啟動後還沒輪到查詢）
+								UNAVAILABLE → 未取得（官方連不上）
+								NOT_FOUND   → 查無此代號
+								更新中、未取得時，資料庫有上次收盤價就用小字顯示「上次收盤價 X（日期）」
+							*/-->
+							<td class="text-end app-number text-nowrap" th:switch="${h.quoteStatus.name()}">
+								<th:block th:case="'OK'">
+									<span class="fw-semibold"
+										th:text="${#numbers.formatDecimal(h.closePrice, 1, 'COMMA', 2, 'POINT')}">1,100.00</span>
+									<div class="small text-muted" th:text="${#temporals.format(h.priceDate, 'MM/dd')}">11/19</div>
+								</th:block>
+								<th:block th:case="'NOT_FOUND'">
+									<span class="text-danger">查無此代號</span>
+								</th:block>
+								<th:block th:case="*">
+									<span th:if="${h.quoteStatus.name() == 'UPDATING'}" class="text-secondary">
+										<i class="bi bi-arrow-repeat"></i> 更新中…
+									</span>
+									<span th:unless="${h.quoteStatus.name() == 'UPDATING'}" class="text-warning-emphasis">未取得</span>
+									<div class="small text-muted" th:if="${h.hasLastClosePrice()}">
+										上次收盤價
+										<span th:text="${#numbers.formatDecimal(h.lastClosePrice, 1, 'COMMA', 2, 'POINT')}">1,100.00</span>
+										（<span th:text="${#temporals.format(h.lastPriceDate, 'MM/dd')}">11/19</span>）
+									</div>
+								</th:block>
+							</td>
 							<td class="text-end text-nowrap">
 								<a class="btn btn-sm btn-outline-secondary" th:href="@{/holdings/{id}/edit(id=${h.id})}">
 									<i class="bi bi-pencil"></i> 修改

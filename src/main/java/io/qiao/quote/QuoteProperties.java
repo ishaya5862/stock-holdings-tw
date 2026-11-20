@@ -1,6 +1,7 @@
 package io.qiao.quote;
 
 import java.time.Duration;
+import java.time.LocalTime;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -8,19 +9,29 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * 官方行情的設定（application.properties 裡 app.quote.* 開頭的值）。
  *
  * 用 @ConfigurationProperties 把一組設定綁成一個物件：
- * 比到處寫 @Value("${...}") 好管理，也能直接寫 3s 這種時間格式（自動轉成 Duration）。
+ * 比到處寫 @Value("${...}") 好管理，也能直接寫 3s、10m 這種時間格式（自動轉成 Duration）。
  *
- * @param twseBaseUrl    證交所主機（例：https://www.twse.com.tw），可用環境變數 TWSE_BASE_URL 改掉
- * @param tpexBaseUrl    櫃買中心主機（例：https://www.tpex.org.tw），可用環境變數 TPEX_BASE_URL 改掉
- * @param connectTimeout 連線逾時
- * @param readTimeout    讀取逾時
- * @param lookupTimeout  新增持股時「判斷上市／上櫃」的整體時間上限（題目要求 10 秒內有結果）
+ * @param twseBaseUrl     證交所主機（例：https://www.twse.com.tw），可用環境變數 TWSE_BASE_URL 改掉
+ * @param tpexBaseUrl     櫃買中心主機（例：https://www.tpex.org.tw），可用環境變數 TPEX_BASE_URL 改掉
+ * @param holidayBaseUrl  休市日行事曆的主機（預設跟證交所相同），可用環境變數 HOLIDAY_BASE_URL 改掉
+ * @param connectTimeout  連線逾時
+ * @param readTimeout     讀取逾時
+ * @param lookupTimeout   新增持股時「判斷上市／上櫃」的整體時間上限（題目要求 10 秒內有結果）
+ * @param refreshEnabled  是否啟用背景排程（測試時關閉，避免連到官方）
+ * @param refreshInterval 背景排程：每一輪結束後隔多久再查下一輪
+ * @param requestGap      背景排程：每一次請求之間至少間隔多久（避免被證交所擋）
+ * @param marketCloseTime 收盤時間（台北時間）：這個時間之後才開始等「今天的收盤價」
  */
 @ConfigurationProperties(prefix = "app.quote")
 public record QuoteProperties(
 		String twseBaseUrl,
 		String tpexBaseUrl,
+		String holidayBaseUrl,
 		Duration connectTimeout,
 		Duration readTimeout,
-		Duration lookupTimeout) {
+		Duration lookupTimeout,
+		boolean refreshEnabled,
+		Duration refreshInterval,
+		Duration requestGap,
+		LocalTime marketCloseTime) {
 }
