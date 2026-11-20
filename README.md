@@ -60,7 +60,42 @@ repo 裡**沒有真實密碼**，`docker-compose.yml` 與 `application.propertie
 |---|---|---|
 | `DB_PASSWORD` | `devpass` | MySQL 帳號 `app` 的密碼 |
 | `DB_ROOT_PASSWORD` | `rootdevpass` | MySQL root 密碼（只用於 docker-compose.yml） |
-| `DB_HOST` / `DB_PORT` / `DB_USERNAME` | `localhost` / `3306` / `app` | 不透過 Docker Compose、改連自己的 MySQL 時使用（例如 `java -jar`） |
+| `DB_HOST` / `DB_PORT` / `DB_USERNAME` | `localhost` / `3306` / `app` | 改連自己的 MySQL 時使用（要同時設 `SPRING_DOCKER_COMPOSE_ENABLED=false`，見下方「用 jar 執行」） |
+
+## 用 jar 執行（不需要原始碼）
+
+[GitHub Releases](https://github.com/ishaya5862/stock-holdings-tw/releases) 提供打包好的 jar（例：`stock-holdings-tw-1.1.0.jar`）。也可以自己打包：`mvnw.cmd package`（PowerShell：`.\mvnw.cmd package`；macOS / Linux：`./mvnw package`），jar 會在 `target/`。
+
+1. 安裝 JDK 17 以上，並**打開 Docker Desktop**。
+2. 把 jar 和 `docker-compose.yml` 放在**同一個資料夾**，在那個資料夾執行：
+   ```bash
+   java -jar stock-holdings-tw-1.1.0.jar
+   ```
+   和原始碼版本一樣會自動啟動 MySQL（第一次要下載 MySQL 映像檔，較久）。看到 `Started StockHoldingsApplication` 後打開 http://localhost:8080 。
+3. 停止：按 `Ctrl + C`（MySQL 會一併停止）。若是直接關掉視窗，MySQL 會繼續執行，請在同一個資料夾執行 `docker compose stop`。
+
+注意：
+- **一定要在 jar 所在的資料夾執行**；找不到 `docker-compose.yml` 時會顯示 `No Docker Compose file found` 並停止。
+- 資料存在 Docker volume，名稱跟資料夾名稱有關：**換一個資料夾執行就是一個新的空資料庫**（舊資料還在原本的資料夾對應的 volume 裡）。
+- 8080 被佔用時可以換埠號：`java -jar stock-holdings-tw-1.1.0.jar --server.port=8081`。
+
+進階：改連自己的 MySQL（不使用 docker-compose.yml），資料庫要先建立 `stock_holdings` 與帳號：
+
+```bash
+# Windows（命令提示字元 cmd）
+set SPRING_DOCKER_COMPOSE_ENABLED=false
+set DB_HOST=localhost
+set DB_PORT=3306
+set DB_PASSWORD=你的密碼
+java -jar stock-holdings-tw-1.1.0.jar
+
+# Windows（PowerShell）
+$env:SPRING_DOCKER_COMPOSE_ENABLED="false"; $env:DB_HOST="localhost"; $env:DB_PORT="3306"; $env:DB_PASSWORD="你的密碼"
+java -jar stock-holdings-tw-1.1.0.jar
+
+# macOS / Linux
+SPRING_DOCKER_COMPOSE_ENABLED=false DB_HOST=localhost DB_PORT=3306 DB_PASSWORD=你的密碼 java -jar stock-holdings-tw-1.1.0.jar
+```
 
 ## 執行測試
 
@@ -93,7 +128,7 @@ API 的測試在 `src/test/java/io/qiao/api/`（逐欄位檢查型別與 null、
 |---|---|
 | 股票代號 | 必填；同一代號只能一筆；**4～6 位數字，最後可加 1 個英文字母**（例：2330、0050、006208、00679B、2881A）。全形數字與英文自動轉半形、所有空白（含全形空白）自動去除、英文自動轉大寫（網頁與 API 相同）；修改時不能改代號 |
 | 張數 | 1～999 的整數（1 張 = 1,000 股） |
-| 買進價 | 大於 0，最多兩位小數 |
+| 買進價 | 大於 0，最多兩位小數；上限 99,999,999.99（資料表欄位 DECIMAL(10,2)） |
 
 > 股票代號不限制成「只能數字」，因為債券 ETF（00679B）、反向／槓桿 ETF（00632R、00631L）、特別股（2881A）的代號都含有英文字母。
 > 新增頁輸入代號時會**即時檢查格式**（不用等按下新增）；後端一定會再檢查一次，前端檢查只是提示。
@@ -355,7 +390,7 @@ App 1.0 送出前不會先檢查輸入，所以由伺服器把關：
 | 送來的值 | 結果 |
 |---|---|
 | `lots`：`1.5`、`"1"`、`"abc"`、`null`、`0`、`1000` | 400，「張數必須是 1～999 的整數」（不會把 1.5 截成 1、不會把 `"1"` 轉成 1） |
-| `buy_price`：`"abc"`、`null`、`0`、`10.123` | 400，「買進價必須是大於 0、最多兩位小數的數字」 |
+| `buy_price`：`"abc"`、`null`、`0`、`10.123` | 400，「買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字」 |
 | `code`：沒填、`""`、只有空白 | 400，「請輸入股票代號」 |
 | `code`：數字 `2330`（不是字串） | 400（否則 `0050` 會被當成數字 50） |
 | `code`：`"２３３０"`、`" 2330 "`、`"00679b"` | 和網頁一樣自動轉成 `2330`、`00679B` |
