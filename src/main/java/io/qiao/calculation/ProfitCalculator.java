@@ -62,6 +62,7 @@ public class ProfitCalculator {
 
 		BigDecimal buyAmount = buyPrice.multiply(quantity);
 		BigDecimal buyFee = fee(buyAmount);
+		// 和 totalCost() 用同一套算法（買進金額 + 買進手續費），兩邊結果一定一致
 
 		BigDecimal sellAmount = closePrice.multiply(quantity);
 		BigDecimal sellFee = fee(sellAmount);
@@ -75,6 +76,24 @@ public class ProfitCalculator {
 		BigDecimal returnPct = pnl.multiply(HUNDRED).divide(totalCost, 2, RoundingMode.HALF_UP);
 
 		return new ProfitResult(buyAmount, buyFee, sellAmount, sellFee, tax, totalCost, pnl, returnPct);
+	}
+
+	/**
+	 * 只算總成本（買進金額 + 買進手續費），不需要收盤價。
+	 * 總計時，取不到收盤價的持股仍要算進總成本（規格：quote_missing 的持股算進 total_cost）。
+	 */
+	public BigDecimal totalCost(long shares, BigDecimal buyPrice) {
+		if (shares <= 0) {
+			throw new IllegalArgumentException("股數必須大於 0：" + shares);
+		}
+		requirePositive(buyPrice, "買進價");
+		BigDecimal buyAmount = buyPrice.multiply(BigDecimal.valueOf(shares));
+		return buyAmount.add(fee(buyAmount));
+	}
+
+	/** 只算總成本，用張數（1.0 版使用） */
+	public BigDecimal totalCostByLots(int lots, BigDecimal buyPrice) {
+		return totalCost((long) lots * SHARES_PER_LOT, buyPrice);
 	}
 
 	/**

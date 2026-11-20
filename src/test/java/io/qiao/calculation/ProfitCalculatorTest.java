@@ -109,6 +109,22 @@ class ProfitCalculatorTest {
 		assertThat(calculator.isEtf("6488")).isFalse();
 	}
 
+	// ===== 總成本（取不到收盤價時，總計仍要算進總成本） =====
+
+	@Test
+	void 總成本_買進金額加買進手續費_不需要收盤價() {
+		// 例子 1：1,000,000 + 1,425；例子 3：10,000 + 20（最低手續費）
+		assertThat(calculator.totalCostByLots(1, new BigDecimal("1000.00"))).isEqualByComparingTo("1001425");
+		assertThat(calculator.totalCostByLots(1, new BigDecimal("10.00"))).isEqualByComparingTo("10020");
+	}
+
+	@Test
+	void 總成本和完整計算的總成本一致() {
+		ProfitResult result = calculator.calculateByLots("0050", 2, new BigDecimal("150.00"), new BigDecimal("145.50"));
+
+		assertThat(calculator.totalCostByLots(2, new BigDecimal("150.00"))).isEqualByComparingTo(result.totalCost());
+	}
+
 	// ===== 張數轉接方法與輸入檢查 =====
 
 	@Test
