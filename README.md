@@ -2,6 +2,16 @@
 
 記下自己買了哪些台股，系統用官方收盤價算出「如果現在全部賣掉，淨賺或淨虧多少」（扣除手續費與證交稅）。
 
+目前版本是 **2.0**（v2.0.0）：用「股」記帳（可記零股）、同一檔分多次買進、賣出一部分；App 1.0 照舊可用。
+
+| 文件 | 內容 |
+|---|---|
+| README.md（本文件） | 安裝、啟動、功能、計算規則、App 1.0 API、已知限制 |
+| [API.md](API.md) | App 2.0 用的 API（`/api/v2`） |
+| [UPGRADE.md](UPGRADE.md) | 從 1.0 升級到 2.0：步驟、資料庫變動、回滾、上線後注意 |
+| [ISSUES.md](ISSUES.md) | 客服轉來的三則回報：原因、查證來源、處理方式 |
+| [screenshots/](screenshots/) | App 1.0 連上 1.0（`v1-app1-list.png`）與升級後的 2.0（`v2-app1-list.png`）的清單畫面 |
+
 ## 需要先安裝
 
 | 軟體 | 版本 | 說明 |
@@ -64,12 +74,12 @@ repo 裡**沒有真實密碼**，`docker-compose.yml` 與 `application.propertie
 
 ## 用 jar 執行（不需要原始碼）
 
-[GitHub Releases](https://github.com/ishaya5862/stock-holdings-tw/releases) 提供打包好的 jar（例：`stock-holdings-tw-1.1.0.jar`）。也可以自己打包：`mvnw.cmd package`（PowerShell：`.\mvnw.cmd package`；macOS / Linux：`./mvnw package`），jar 會在 `target/`。
+自己打包：`mvnw.cmd package`（PowerShell：`.\mvnw.cmd package`；macOS / Linux：`./mvnw package`），jar 會在 `target/stock-holdings-tw-2.0.0.jar`。[GitHub Releases](https://github.com/ishaya5862/stock-holdings-tw/releases) 有 1.1.0 打包好的 jar（1.0 版）。以下用 2.0.0 為例。
 
 1. 安裝 JDK 17 以上，並**打開 Docker Desktop**。
 2. 把 jar 和 `docker-compose.yml` 放在**同一個資料夾**，在那個資料夾執行：
    ```bash
-   java -jar stock-holdings-tw-1.1.0.jar
+   java -jar stock-holdings-tw-2.0.0.jar
    ```
    和原始碼版本一樣會自動啟動 MySQL（第一次要下載 MySQL 映像檔，較久）。看到 `Started StockHoldingsApplication` 後打開 http://localhost:8080 。
 3. 停止：按 `Ctrl + C`（MySQL 會一併停止）。若是直接關掉視窗，MySQL 會繼續執行，請在同一個資料夾執行 `docker compose stop`。
@@ -77,7 +87,7 @@ repo 裡**沒有真實密碼**，`docker-compose.yml` 與 `application.propertie
 注意：
 - **一定要在 jar 所在的資料夾執行**；找不到 `docker-compose.yml` 時會顯示 `No Docker Compose file found` 並停止。
 - 資料存在 Docker volume，名稱跟資料夾名稱有關：**換一個資料夾執行就是一個新的空資料庫**（舊資料還在原本的資料夾對應的 volume 裡）。
-- 8080 被佔用時可以換埠號：`java -jar stock-holdings-tw-1.1.0.jar --server.port=8081`。
+- 8080 被佔用時可以換埠號：`java -jar stock-holdings-tw-2.0.0.jar --server.port=8081`。
 
 進階：改連自己的 MySQL（不使用 docker-compose.yml），資料庫要先建立 `stock_holdings` 與帳號：
 
@@ -87,14 +97,14 @@ set SPRING_DOCKER_COMPOSE_ENABLED=false
 set DB_HOST=localhost
 set DB_PORT=3306
 set DB_PASSWORD=你的密碼
-java -jar stock-holdings-tw-1.1.0.jar
+java -jar stock-holdings-tw-2.0.0.jar
 
 # Windows（PowerShell）
 $env:SPRING_DOCKER_COMPOSE_ENABLED="false"; $env:DB_HOST="localhost"; $env:DB_PORT="3306"; $env:DB_PASSWORD="你的密碼"
-java -jar stock-holdings-tw-1.1.0.jar
+java -jar stock-holdings-tw-2.0.0.jar
 
 # macOS / Linux
-SPRING_DOCKER_COMPOSE_ENABLED=false DB_HOST=localhost DB_PORT=3306 DB_PASSWORD=你的密碼 java -jar stock-holdings-tw-1.1.0.jar
+SPRING_DOCKER_COMPOSE_ENABLED=false DB_HOST=localhost DB_PORT=3306 DB_PASSWORD=你的密碼 java -jar stock-holdings-tw-2.0.0.jar
 ```
 
 ## 執行測試
@@ -125,7 +135,7 @@ API 的測試在 `src/test/java/io/qiao/api/`（逐欄位檢查型別與 null、
 | http://localhost:8080/v2 | **2.0 網頁**：持股總覽（見下方「2.0 網頁」） |
 | http://localhost:8080/holdings | 第一版持股清單（以「張」記）：新增、修改、刪除；2.0 推出後照舊保留 |
 | http://localhost:8080/api/v1/... | 給手機 App 1.0 用的 JSON API（見下方「手機 App 1.0 API」） |
-| http://localhost:8080/api/v2/... | 給手機 App 2.0 用的 JSON API（規格文件 `API.md` 於第 8 題提供） |
+| http://localhost:8080/api/v2/... | 給手機 App 2.0 用的 JSON API（規格見 [API.md](API.md)） |
 
 ### 2.0 網頁（第 6 題）
 
@@ -369,6 +379,20 @@ TWSE_BASE_URL=http://localhost:9000 TPEX_BASE_URL=http://localhost:9000 ./mvnw s
 | `PortfolioSummaryTest` | 規格範例（例子 1 ＋ 例子 2）、收益率不是平均、部分／全部取不到收盤價、沒有持股 |
 | `ViewFormatsTest`、`HoldingControllerTest` | 正負號、千分位、紅賺綠虧；清單與總計實際顯示的數字 |
 
+**2.0 新增的計算規則**（第 8 題）：
+
+| 規則 | 測試 |
+|---|---|
+| 只有一筆買進時，結果和第 4 題完全相同（App 1.0 的數字不變） | `PositionCalculatorTest` |
+| 多次買進的移動平均成本（含買進手續費）、平均成本四捨五入到分 | `PositionCalculatorTest`（台積電例：613.37、368,022.75） |
+| 部分賣出：分攤成本到分、已實現損益；分兩次賣與一次賣的已實現總和相同；全部賣光時剩餘成本歸零 | `PositionCalculatorTest` |
+| 未實現損益與收益率的分母是「剩餘成本」 | `PositionCalculatorTest` |
+| 零股的手續費一樣最低 20 元；金額有「分」 | `PositionCalculatorTest` |
+| 不能賣超（含補登過去日期、修改或刪除舊交易造成之後賣超） | `PositionCalculatorTest`、`TradeServiceTest` |
+| 債券 ETF 停徵證交稅（依賣出日期、期限可設定） | `ProfitCalculatorTest`、`PositionCalculatorTest`、`BondEtfTaxTest` |
+| 單筆成交金額上限 100 億元 | `TradeServiceTest`、`ApiV2WriteTest` |
+| 前端試算（股／張換算、BigInt 金額、證交稅） | `src/test/js/v2-form-test.html` |
+
 只跑盈虧相關的測試：
 
 ```bash
@@ -501,6 +525,8 @@ curl.exe -i -X DELETE http://localhost:8080/api/v1/holdings/1
 
 App 1.0 連上本服務的持股清單：[`screenshots/v1-app1-list.png`](screenshots/v1-app1-list.png)
 
+升級到 2.0 後，App 1.0 照樣能用（第 8 題）：用 1.0 留下的資料庫啟動 2.0，再用 App 1.0 連上去的清單畫面：[`screenshots/v2-app1-list.png`](screenshots/v2-app1-list.png)（升級步驟見 [UPGRADE.md](UPGRADE.md)）
+
 ## 設計說明
 
 - **時區**：正式機在海外、主機時區不是台北，程式內所有時間一律以 `Asia/Taipei` 判斷（設定在 `app.zone`），不依賴主機設定。
@@ -550,6 +576,9 @@ screenshots/        App 畫面截圖
 | 第 5 題：給手機 App 用的 API | ✅ |
 | 第 6 題：2.0 版（零股、多次買進、部分賣出） | ✅ 計算核心、交易紀錄資料表與 1.0 資料轉換、1.0 介面改由交易紀錄計算、交易服務（含同時操作）、2.0 讀取與寫入 API（`/api/v2`）、防止重送（`Idempotency-Key`）、新網頁（`/v2`：總覽、明細、買進、賣出、修改、刪除） |
 | 第 7 題：客服回報（`ISSUES.md`） | ✅ 三則回報的原因、查證來源與客服回覆；回報二（債券 ETF 停徵證交稅）已修正程式 |
+| 第 8 題：交付 2.0 | ✅ `API.md`、2.0 計算規則的單元測試、`UPGRADE.md`、`screenshots/v2-app1-list.png`、tag `v2.0.0` |
+| 第 9 題：回顧（`REVIEW.md`） | 製作中 |
 
+> v2.0.0 為 2.0 版（第 6～8 題，含朋友測試回饋的修正）；第 9 題 `REVIEW.md` 在 v2.0.0 之後提交。
 > v1.0.0 為 Part B 發下時的進度快照（依題目規定「不管做到哪裡都先打 v1.0.0」），當時第 3 題只完成查詢與解析。
 > 以下都在 v1.0.0 之後完成：第 3 題其餘部分、第 3 題修正（股票資訊拆到 `stocks` 表，避免背景排程覆寫使用者的修改）、第 4 題、第 5 題，以及第 2 題的修正（代號全形轉半形、防止重複送出）。
