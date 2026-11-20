@@ -189,9 +189,49 @@ class QuoteRefreshSchedulerTest {
 		// 2330、2454 連續失敗 → 暫停上市，2886 不再查；上櫃的 6488 照常
 		assertThat(twse.requested).containsExactly("2330", "2454");
 		assertThat(summary.paused()).isEqualTo(1);
-		assertThat(cache.get("2886")).isEmpty();
+		// 2886 沒有查，但這次啟動後從沒查過 → 標記「未取得」，不能停在「更新中…」（第 3 題要求 5）
+		// （2026-11-20 修正：原本這裡斷言快取是空的，等於把「一直顯示更新中」當成正確行為）
+		assertThat(cache.get("2886").get().status()).isEqualTo(QuoteStatus.UNAVAILABLE);
 		assertThat(tpex.requested).containsExactly("6488");
 		assertThat(cache.get("6488").get().status()).isEqualTo(QuoteStatus.OK);
+	}
+
+	@Test
+	void 官方全部連不上_每一檔都顯示未取得_不會停在更新中() {
+		// 題目第 3 題要求 5：官方網站連不上時，收盤價那格顯示「未取得」
+		held(stock("2330", Market.TWSE), stock("2454", Market.TWSE), stock("2886", Market.TWSE), stock("0050", Market.TWSE),
+				stock("6488", Market.TPEX), stock("3105", Market.TPEX), stock("8069", Market.TPEX));
+		Function<String, Optional<StockQuote>> down = code -> {
+			throw new QuoteUnavailableException("連不上");
+		};
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0),
+				new CountingClient(Market.TWSE, down), new CountingClient(Market.TPEX, down));
+
+		scheduler.refresh(RequestThrottle.NONE);
+
+		for (String code : List.of("2330", "2454", "2886", "0050", "6488", "3105", "8069")) {
+			assertThat(cache.get(code)).as(code + " 不能停在更新中（快取沒有紀錄）").isPresent();
+			assertThat(cache.get(code).get().status()).as(code).isEqualTo(QuoteStatus.UNAVAILABLE);
+		}
+	}
+
+	@Test
+	void 市場暫停時_之前查到的收盤價不會被蓋成未取得() {
+		tradingDay(true);
+		held(stock("2330", Market.TWSE), stock("2454", Market.TWSE), stock("2886", Market.TWSE));
+		// 2886 早上已經查到昨天的收盤價；收盤後要查今天的，但官方此時連不上
+		cache.putSuccess(quote("2886", Market.TWSE, THURSDAY), at(FRIDAY, 9, 0));
+		CountingClient twse = new CountingClient(Market.TWSE, code -> {
+			throw new QuoteUnavailableException("連不上");
+		});
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 14, 0), twse, okClient(Market.TPEX));
+
+		scheduler.refresh(RequestThrottle.NONE);
+
+		// 2330、2454 先查（還沒查過的排前面）、連續失敗 → 暫停上市；2886 被略過，保留昨天的收盤價
+		assertThat(twse.requested).containsExactly("2330", "2454");
+		assertThat(cache.get("2886").get().status()).isEqualTo(QuoteStatus.OK);
+		assertThat(cache.get("2886").get().quote().priceDate()).isEqualTo(THURSDAY);
 	}
 
 	// ===== ③ 避免查到半夜：16:00 之後連續 3 次拿到舊日期，今天就不再等 =====
