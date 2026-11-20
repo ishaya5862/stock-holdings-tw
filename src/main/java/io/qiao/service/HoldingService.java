@@ -9,12 +9,15 @@ import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import io.qiao.calculation.ProfitCalculator;
+import io.qiao.calculation.TradeSide;
 import io.qiao.dto.HoldingListView;
 import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Stock;
+import io.qiao.entity.Trade;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
@@ -23,6 +26,7 @@ import io.qiao.quote.QuoteCache;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
+import io.qiao.repository.TradeRepository;
 import io.qiao.validation.StockCodes;
 
 /**
@@ -30,25 +34,33 @@ import io.qiao.validation.StockCodes;
  * 網頁（第 2 題）和 API（第 5 題）共用這一層，規則只寫一次。
  *
  * 持股（holdings）只存使用者會改的欄位；股票名稱、市場別、上次收盤價在 stocks（StockService 負責寫入）。
+ *
+ * 2.0 過渡期（第 6 題 C2，「擴充 → 遷移 → 收縮」的雙寫階段）：
+ * 1.0 的新增、修改、刪除除了寫 holdings 的張數、買進價，也同步寫 trades（每筆持股剛好一筆買進），
+ * 讓每個版本的資料都一致。C4 改成由 trades 計算輸出後，再刪除 holdings 的舊欄位（V6）。
  */
 @Service
 public class HoldingService {
 
 	private final HoldingRepository holdingRepository;
+	private final TradeRepository tradeRepository;
 	private final StockService stockService;
 	private final StockLookupService stockLookupService;
 	private final QuoteCache quoteCache;
 	private final ProfitCalculator profitCalculator;
+	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
-	public HoldingService(HoldingRepository holdingRepository, StockService stockService,
+	public HoldingService(HoldingRepository holdingRepository, TradeRepository tradeRepository, StockService stockService,
 			StockLookupService stockLookupService, QuoteCache quoteCache, ProfitCalculator profitCalculator,
-			Clock clock) {
+			TransactionTemplate transactionTemplate, Clock clock) {
 		this.holdingRepository = holdingRepository;
+		this.tradeRepository = tradeRepository;
 		this.stockService = stockService;
 		this.stockLookupService = stockLookupService;
 		this.quoteCache = quoteCache;
 		this.profitCalculator = profitCalculator;
+		this.transactionTemplate = transactionTemplate;
 		this.clock = clock;
 	}
 
@@ -102,10 +114,11 @@ public class HoldingService {
 	/**
 	 * 新增持股：先檢查重複，再向官方確認代號存在（並取得名稱、市場別、最近收盤價），最後儲存。
 	 *
-	 * 寫入順序：先寫 stocks（股票資訊），再寫 holdings（外鍵規定持股的代號一定要在股票表裡）。
+	 * 寫入順序：先寫 stocks（股票資訊），再寫 holdings（外鍵規定持股的代號一定要在股票表裡），最後寫 trades（一筆買進）。
 	 *
 	 * 注意：這個方法沒有加 @Transactional。查官方最多要等 9 秒，
-	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；兩次寫入各自開交易。
+	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；查完官方後，三個寫入用 TransactionTemplate
+	 * 包成同一個交易：任何一步失敗就全部復原，不會出現「有持股、沒有交易紀錄」。
 	 *
 	 * @throws DuplicateCodeException     代號已存在
 	 * @throws StockNotFoundException     上市、上櫃都查不到這個代號（資料不儲存）
@@ -132,10 +145,15 @@ public class HoldingService {
 
 		Holding saved;
 		try {
-			// 股票資訊（名稱、市場、上次收盤價）寫到 stocks；已有這個代號就只更新
-			stockService.recordQuote(quote);
-			// saveAndFlush：立刻寫入資料庫，讓 UNIQUE 限制的錯誤在這裡就發生，才能轉成 DuplicateCodeException
-			saved = holdingRepository.saveAndFlush(holding);
+			saved = transactionTemplate.execute(status -> {
+				// 股票資訊（名稱、市場、上次收盤價）寫到 stocks；已有這個代號就只更新
+				stockService.recordQuote(quote);
+				// saveAndFlush：立刻寫入資料庫，讓 UNIQUE 限制的錯誤在這裡就發生，才能轉成 DuplicateCodeException
+				Holding inserted = holdingRepository.saveAndFlush(holding);
+				// 2.0 雙寫：同一筆持股的買進紀錄（App 1.0 沒有日期 → 台北時區的今天，標記推估）
+				tradeRepository.save(Trade.v1Buy(inserted.getId(), lots, buyPrice, now));
+				return inserted;
+			});
 		} catch (DataIntegrityViolationException e) {
 			// 第二道檢查（最後防線）：兩個人「同時」新增同一個代號時，第一道檢查都會通過，由資料庫的 UNIQUE／主鍵限制擋下
 			throw new DuplicateCodeException(normalizedCode);
@@ -155,21 +173,36 @@ public class HoldingService {
 	@Transactional
 	public Holding update(Long id, Integer lots, BigDecimal buyPrice) {
 		Holding holding = findById(id);
+		LocalDateTime now = LocalDateTime.now(clock);
 		holding.setLots(lots);
 		holding.setBuyPrice(buyPrice);
-		holding.setUpdatedAt(LocalDateTime.now(clock));
+		holding.setUpdatedAt(now);
+
+		// 2.0 雙寫：1.0 的持股剛好對應一筆買進，同步修改它的股數與價格（日期不變）
+		// 有多筆交易或有賣出的持股是 2.0 才會出現的情況，v1 怎麼處理在 C4 決定；這裡先明確擋下，不默默改壞資料
+		List<Trade> trades = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(id);
+		if (trades.size() != 1 || trades.get(0).getSide() != TradeSide.BUY) {
+			throw new IllegalStateException("持股 " + id + " 不是「只有一筆買進」，1.0 的修改方式不適用（C4 處理）");
+		}
+		Trade trade = trades.get(0);
+		trade.setShares((long) lots * 1000);
+		trade.setPrice(buyPrice);
+		trade.setUpdatedAt(now);
+
 		// 在交易（@Transactional）內修改查出來的 Entity，結束時 JPA 會自動寫回資料庫，不需要再呼叫 save
 		return holding;
 	}
 
 	/**
-	 * 刪除持股。股票資訊（stocks）保留：其他功能（Part B 多筆買賣紀錄）可能還會用到，排程也只查有人持有的股票。
+	 * 刪除持股（連同它的全部交易紀錄）。股票資訊（stocks）保留：排程只查有人持有的股票。
+	 * 外鍵不設連帶刪除（C2-2），所以這裡明確「先刪交易、再刪持股」，刪除範圍寫在程式裡看得見。
 	 *
 	 * @throws HoldingNotFoundException 找不到這筆持股
 	 */
 	@Transactional
 	public void delete(Long id) {
 		Holding holding = findById(id);
+		tradeRepository.deleteByHoldingId(id);
 		holdingRepository.delete(holding);
 		// 同一個代號只會有一筆持股，刪掉後快取也不需要了
 		quoteCache.remove(holding.getCode());

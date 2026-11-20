@@ -1,0 +1,19 @@
+package io.qiao.repository;
+
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import io.qiao.entity.Trade;
+
+/**
+ * 交易紀錄資料存取。方法名稱照 Spring Data JPA 的命名規則，SQL 會自動產生。
+ */
+public interface TradeRepository extends JpaRepository<Trade, Long> {
+
+	/** 某一筆持股的全部交易，依重算順序（交易日期 → id）排列；用得到索引 idx_trades_holding_order */
+	List<Trade> findByHoldingIdOrderByTradeDateAscIdAsc(Long holdingId);
+
+	/** 刪除某一筆持股的全部交易（刪持股前呼叫：外鍵不連帶刪除，由程式明確先刪交易） */
+	void deleteByHoldingId(Long holdingId);
+}

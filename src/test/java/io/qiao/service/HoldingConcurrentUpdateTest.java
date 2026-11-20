@@ -27,6 +27,7 @@ import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 import io.qiao.repository.StockRepository;
+import io.qiao.repository.TradeRepository;
 
 /**
  * 兩個「獨立交易」交錯執行時，不能互相覆寫對方的欄位（朋友回報的問題）。
@@ -47,6 +48,9 @@ class HoldingConcurrentUpdateTest {
 	private HoldingRepository holdingRepository;
 
 	@Autowired
+	private TradeRepository tradeRepository;
+
+	@Autowired
 	private StockService stockService;
 
 	@Autowired
@@ -64,6 +68,7 @@ class HoldingConcurrentUpdateTest {
 
 	@BeforeEach
 	void setUp() {
+		tradeRepository.deleteAll(); // 2.0：交易紀錄的外鍵指向持股、不連帶刪除（C2-2）→ 先刪交易
 		holdingRepository.deleteAll();
 		stockRepository.deleteAll(); // 先刪持股再刪股票（外鍵）
 		when(stockLookupService.lookup(anyString())).thenReturn(new StockQuote(
@@ -75,6 +80,7 @@ class HoldingConcurrentUpdateTest {
 	@AfterEach
 	void tearDown() {
 		otherThread.shutdownNow();
+		tradeRepository.deleteAll(); // 2.0：交易紀錄的外鍵指向持股、不連帶刪除（C2-2）→ 先刪交易
 		holdingRepository.deleteAll();
 		stockRepository.deleteAll(); // 先刪持股再刪股票（外鍵）
 	}
