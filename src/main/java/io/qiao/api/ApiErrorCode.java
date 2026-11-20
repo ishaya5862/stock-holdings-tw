@@ -1,0 +1,42 @@
+package io.qiao.api;
+
+import org.springframework.http.HttpStatus;
+
+/**
+ * API 錯誤代碼與對應的 HTTP 狀態碼。
+ * 前四個是 App 1.0 API 規格列出的；其他是規格沒列、但一定要用同樣格式回應的情況
+ * （否則 App 會顯示「資料格式錯誤」）。
+ */
+public enum ApiErrorCode {
+
+	/** 欄位缺少、型別不對、超出範圍、JSON 格式錯誤（規格） */
+	VALIDATION_ERROR(HttpStatus.BAD_REQUEST),
+
+	/** 找不到持股、網址的 id 不是數字、/api 底下不存在的網址（規格） */
+	NOT_FOUND(HttpStatus.NOT_FOUND),
+
+	/** 上市、上櫃都查不到這個代號，或代號格式不可能存在（規格） */
+	STOCK_NOT_FOUND(HttpStatus.NOT_FOUND),
+
+	/** 同一個代號已經在持股中（規格） */
+	DUPLICATE_CODE(HttpStatus.CONFLICT),
+
+	/** 官方行情連不上，無法確認代號是否存在（D-1 決定：503） */
+	QUOTE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
+
+	/** HTTP 方法不支援（例如對 /api/v1/summary 送 POST） */
+	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED),
+
+	/** 伺服器內部錯誤（不把程式細節給使用者看） */
+	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR);
+
+	private final HttpStatus status;
+
+	ApiErrorCode(HttpStatus status) {
+		this.status = status;
+	}
+
+	public HttpStatus status() {
+		return status;
+	}
+}
