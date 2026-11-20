@@ -113,6 +113,31 @@ class TwseQuoteClientTest {
 	}
 
 	@Test
+	void 往前多查幾個月_從兩個月前開始_找到第一個有成交的月份就停() throws IOException {
+		// 今天 2026-11-20：本月(11)、上月(10) 由 fetchLatest 查；fetchLastTrade 從 9 月開始往前
+		server.expect(queryParam("date", "20260901"))
+				.andRespond(withSuccess(json("twse-notfound.json"), MediaType.APPLICATION_JSON));
+		server.expect(queryParam("date", "20260801"))
+				.andRespond(withSuccess(json("twse-2330-202610.json"), MediaType.APPLICATION_JSON));
+
+		StockQuote lastTrade = client.fetchLastTrade("2330", RequestThrottle.NONE, 4).orElseThrow();
+
+		assertThat(lastTrade.closePrice()).isEqualByComparingTo("2370.00");
+		server.verify(); // 8 月找到就停，不會再查 7、6 月
+	}
+
+	@Test
+	void 往前多查幾個月都沒有成交_回傳空() throws IOException {
+		for (String date : new String[] { "20260901", "20260801", "20260701", "20260601" }) {
+			server.expect(queryParam("date", date))
+					.andRespond(withSuccess(json("twse-notfound.json"), MediaType.APPLICATION_JSON));
+		}
+
+		assertThat(client.fetchLastTrade("2330", RequestThrottle.NONE, 4)).isEmpty();
+		server.verify();
+	}
+
+	@Test
 	void 逾時_丟出無法取得而不是查無() {
 		server.expect(requestTo(startsWith(PATH)))
 				.andRespond(withException(new SocketTimeoutException("Read timed out")));

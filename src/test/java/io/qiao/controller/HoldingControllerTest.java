@@ -86,6 +86,20 @@ class HoldingControllerTest {
 	}
 
 	@Test
+	void 清單收盤價_近期無成交資料_顯示中性說明與最後收盤價() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000")); // 上次收盤價 1,100.00（2026/11/19）
+		quoteCache.putNoRecentTrade("2330", LocalDateTime.of(2026, 11, 20, 14, 0));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("近期無成交資料")))
+				.andExpect(content().string(containsString("可能停止交易或已下市")))
+				.andExpect(content().string(containsString("最後收盤價")))
+				.andExpect(content().string(containsString("2026/11/19")))
+				.andExpect(content().string(not(containsString("查無此代號"))));
+	}
+
+	@Test
 	void 清單收盤價_啟動後還沒查過_顯示更新中() throws Exception {
 		holdingService.create("2330", 1, new BigDecimal("1000"));
 		quoteCache.remove("2330"); // 模擬伺服器剛重開、排程還沒輪到

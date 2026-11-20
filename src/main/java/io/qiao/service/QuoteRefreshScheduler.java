@@ -36,6 +36,10 @@ import io.qiao.quote.TradingCalendar;
  *   已經拿到今天的收盤價、13:30 前、休市日都不查。
  * - 每一次請求之間間隔 6 秒（RequestThrottle），避免被證交所擋。
  * - 某個市場查詢失敗 → 這一輪不再查那個市場（避免被擋時還繼續猛打），另一個市場照常。
+ * - 已存在的持股近兩個月都沒有成交資料時（每檔每天最多處理一次）：
+ *   1. 改查另一個市場 → 查到代表「上櫃轉上市（或反過來）」，自動更新市場別。
+ *   2. 原市場往前多查幾個月 → 找到最後一次成交，寫回「上次收盤價」（長期停止交易）。
+ *   3. 都沒有 → 狀態「近期無成交資料（可能停止交易或已下市）」。
  *
  * 間隔 10 分鐘 + 每輪查詢時間，可保證官方公布後一小時內看得到當天收盤價，不用重開伺服器。
  * 測試時用 app.quote.refresh-enabled=false 關閉，避免測試連到官方。
@@ -117,8 +121,9 @@ public class QuoteRefreshScheduler {
 		switch (entry.status()) {
 			case UNAVAILABLE:
 				return true; // 上次失敗，這輪再試
-			case NOT_FOUND:
-				return entry.checkedAt().toLocalDate().isBefore(today); // 查無的代號一天重試一次就好
+			case NO_RECENT_TRADE:
+				// 近期無成交資料：要多查另一個市場與往前幾個月（請求較多），一天重試一次就好
+				return entry.checkedAt().toLocalDate().isBefore(today);
 			case OK:
 				if (!entry.quote().priceDate().isBefore(today)) {
 					return false; // 已經是今天的收盤價
@@ -132,7 +137,7 @@ public class QuoteRefreshScheduler {
 		}
 	}
 
-	/** 已知市場：只查那個市場 */
+	/** 已知市場：先查原本的市場；近兩個月都沒有成交資料時，交給 handleNoRecentTrade 進一步判斷 */
 	private void refreshKnownMarket(Holding holding, LocalDateTime now, RequestThrottle throttle,
 			Set<Market> pausedMarkets, Summary summary) {
 		Market market = holding.getMarket();
@@ -145,16 +150,72 @@ public class QuoteRefreshScheduler {
 			if (quote.isPresent()) {
 				saveSuccess(holding, quote.get(), now);
 				summary.updated++;
-			} else {
-				quoteCache.putNotFound(holding.getCode(), now);
-				summary.failed++;
+				return;
 			}
 		} catch (QuoteUnavailableException e) {
-			quoteCache.putUnavailable(holding.getCode(), now);
-			pausedMarkets.add(market);
-			summary.failed++;
-			log.warn("{} 查詢失敗，本輪暫停查詢 {}：{}", holding.getCode(), market, e.getMessage());
+			markUnavailable(holding, market, now, pausedMarkets, summary, e);
+			return;
 		}
+		handleNoRecentTrade(holding, market, now, throttle, pausedMarkets, summary);
+	}
+
+	/**
+	 * 已存在的持股在原市場近兩個月都沒有成交資料：
+	 * 1. 改查另一個市場：查到 → 上櫃轉上市（或反過來），代號不變、市場改變，自動更新市場別。
+	 * 2. 原市場往前多查幾個月：找到最後一次成交 → 寫回「上次收盤價」（長期停止交易）。
+	 * 3. 標記「近期無成交資料（可能停止交易或已下市）」。
+	 * 任何一步連不上 → 標記「未取得」，下一輪再試（無法判斷時不下結論）。
+	 */
+	private void handleNoRecentTrade(Holding holding, Market market, LocalDateTime now, RequestThrottle throttle,
+			Set<Market> pausedMarkets, Summary summary) {
+		String code = holding.getCode();
+
+		// 1. 另一個市場
+		Market otherMarket = market == Market.TWSE ? Market.TPEX : Market.TWSE;
+		if (pausedMarkets.contains(otherMarket)) {
+			// 另一個市場這一輪暫停中，無法確認是否轉市場，先不下結論
+			quoteCache.putUnavailable(code, now);
+			summary.paused++;
+			return;
+		}
+		try {
+			Optional<StockQuote> moved = clients.get(otherMarket).fetchLatest(code, throttle);
+			if (moved.isPresent()) {
+				log.info("{} 在 {} 查不到、在 {} 查到，市場別更新為 {}（轉市場）", code, market, otherMarket, otherMarket);
+				saveSuccess(holding, moved.get(), now);
+				summary.updated++;
+				return;
+			}
+		} catch (QuoteUnavailableException e) {
+			markUnavailable(holding, otherMarket, now, pausedMarkets, summary, e);
+			return;
+		}
+
+		// 2. 原市場往前多查幾個月，找最後一次成交
+		try {
+			Optional<StockQuote> lastTrade = clients.get(market)
+					.fetchLastTrade(code, throttle, properties.lookbackMonths());
+			lastTrade.ifPresent(quote -> {
+				log.info("{} 近兩個月無成交，最後一次成交在 {}（收盤 {}）", code, quote.priceDate(), quote.closePrice());
+				// 寫回資料庫的「上次收盤價」：畫面會顯示「最後收盤價 X（日期）」
+				holdingService.recordQuote(holding.getId(), quote);
+			});
+		} catch (QuoteUnavailableException e) {
+			markUnavailable(holding, market, now, pausedMarkets, summary, e);
+			return;
+		}
+
+		// 3. 近期無成交資料
+		quoteCache.putNoRecentTrade(code, now);
+		summary.failed++;
+	}
+
+	private void markUnavailable(Holding holding, Market market, LocalDateTime now, Set<Market> pausedMarkets,
+			Summary summary, QuoteUnavailableException e) {
+		quoteCache.putUnavailable(holding.getCode(), now);
+		pausedMarkets.add(market);
+		summary.failed++;
+		log.warn("{} 查詢失敗，本輪暫停查詢 {}：{}", holding.getCode(), market, e.getMessage());
 	}
 
 	/**
@@ -182,9 +243,9 @@ public class QuoteRefreshScheduler {
 				log.warn("{} 查詢失敗，本輪暫停查詢 {}：{}", holding.getCode(), market, e.getMessage());
 			}
 		}
-		// 兩邊都「確定查無」才標記查無；有一邊沒查成，就只是暫時未取得
+		// 兩邊都「確定近期無成交」才標記；有一邊沒查成，就只是暫時未取得
 		if (allConfirmedNotFound) {
-			quoteCache.putNotFound(holding.getCode(), now);
+			quoteCache.putNoRecentTrade(holding.getCode(), now);
 		} else {
 			quoteCache.putUnavailable(holding.getCode(), now);
 		}

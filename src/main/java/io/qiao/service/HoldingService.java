@@ -141,7 +141,8 @@ public class HoldingService {
 
 	/**
 	 * 背景排程查到行情後呼叫：
-	 * 1. 第 2 題時新增、還沒有名稱或市場的持股，補上官方的名稱與市場。
+	 * 1. 補上或更新名稱與市場：第 2 題時新增、還沒有名稱或市場的持股；
+	 *    或上櫃轉上市（或反過來）時，代號不變但市場改變。
 	 * 2. 更新「上次收盤價」（只在數字或日期有變時才寫入）。
 	 * 不更新 updated_at：那個欄位代表「使用者最後修改的時間」，排程更新行情不算使用者修改。
 	 * 持股在排程查詢期間被刪除時，直接略過。
@@ -149,7 +150,7 @@ public class HoldingService {
 	@Transactional
 	public void recordQuote(Long holdingId, StockQuote quote) {
 		holdingRepository.findById(holdingId).ifPresent(holding -> {
-			if (holding.getName() == null || holding.getMarket() == null) {
+			if (holding.getName() == null || holding.getMarket() != quote.market()) {
 				holding.setName(quote.name());
 				holding.setMarket(quote.market());
 			}

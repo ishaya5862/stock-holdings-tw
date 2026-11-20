@@ -25,6 +25,16 @@ public interface StockQuoteClient {
 	 */
 	Optional<StockQuote> fetchLatest(String code, RequestThrottle throttle);
 
+	/**
+	 * 往前多查幾個月，找出「最後一次成交」（不含本月與上個月，那兩個月 fetchLatest 已查過）。
+	 * 已存在的持股近兩個月都沒有成交資料時使用：找得到 → 長期停止交易（顯示最後收盤價）；找不到 → 可能已下市。
+	 *
+	 * @param lookbackMonths 往前再查幾個月（例如 4 → 查兩個月前到五個月前）
+	 * @return 找到 → 最後一次成交的行情；都沒有 → Optional.empty()
+	 * @throws QuoteUnavailableException 連不上等「無法判斷」的情況
+	 */
+	Optional<StockQuote> fetchLastTrade(String code, RequestThrottle throttle, int lookbackMonths);
+
 	/** 不限制請求間隔（新增持股時使用，要在 10 秒內有結果） */
 	default Optional<StockQuote> fetchLatest(String code) {
 		return fetchLatest(code, RequestThrottle.NONE);
