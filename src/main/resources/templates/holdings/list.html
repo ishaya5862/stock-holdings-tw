@@ -56,7 +56,7 @@
 								OK          → 收盤價 + 日期
 								UPDATING    → 更新中…（這次啟動後還沒輪到查詢）
 								UNAVAILABLE → 未取得（官方連不上）
-								NOT_FOUND   → 查無此代號
+								NO_RECENT_TRADE → 近期無成交資料（可能停止交易或已下市）＋ 最後收盤價（含年份，可能是好幾個月前）
 								更新中、未取得時，資料庫有上次收盤價就用小字顯示「上次收盤價 X（日期）」
 							*/-->
 							<td class="text-end app-number text-nowrap" th:switch="${h.quoteStatus.name()}">
@@ -65,8 +65,14 @@
 										th:text="${#numbers.formatDecimal(h.closePrice, 1, 'COMMA', 2, 'POINT')}">1,100.00</span>
 									<div class="small text-muted" th:text="${#temporals.format(h.priceDate, 'MM/dd')}">11/19</div>
 								</th:block>
-								<th:block th:case="'NOT_FOUND'">
-									<span class="text-danger">查無此代號</span>
+								<th:block th:case="'NO_RECENT_TRADE'">
+									<span class="text-danger">近期無成交資料</span>
+									<div class="small text-muted">（可能停止交易或已下市）</div>
+									<div class="small text-muted" th:if="${h.hasLastClosePrice()}">
+										最後收盤價
+										<span th:text="${#numbers.formatDecimal(h.lastClosePrice, 1, 'COMMA', 2, 'POINT')}">1,100.00</span>
+										（<span th:text="${#temporals.format(h.lastPriceDate, 'yyyy/MM/dd')}">2026/06/30</span>）
+									</div>
 								</th:block>
 								<th:block th:case="*">
 									<span th:if="${h.quoteStatus.name() == 'UPDATING'}" class="text-secondary">

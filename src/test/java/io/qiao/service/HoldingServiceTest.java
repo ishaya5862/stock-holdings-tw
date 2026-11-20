@@ -65,6 +65,20 @@ class HoldingServiceTest {
 	}
 
 	@Test
+	void 排程查到另一個市場的行情_更新市場別_轉上市() {
+		when(stockLookupService.lookup("6488")).thenReturn(new StockQuote(
+				"6488", "環球晶", Market.TPEX, new BigDecimal("490.00"), LocalDate.of(2026, 11, 19)));
+		Holding saved = holdingService.create("6488", 1, new BigDecimal("600"));
+
+		holdingService.recordQuote(saved.getId(), new StockQuote(
+				"6488", "環球晶", Market.TWSE, new BigDecimal("500.00"), LocalDate.of(2026, 11, 20)));
+
+		Holding updated = holdingRepository.findById(saved.getId()).orElseThrow();
+		assertThat(updated.getMarket()).isEqualTo(Market.TWSE);
+		assertThat(updated.getLastClosePrice()).isEqualByComparingTo("500.00");
+	}
+
+	@Test
 	void 代號在上市上櫃都查不到_不儲存() {
 		when(stockLookupService.lookup("9999")).thenThrow(new StockNotFoundException("9999"));
 

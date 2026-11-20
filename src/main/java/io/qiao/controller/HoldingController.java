@@ -16,6 +16,7 @@ import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
 import io.qiao.service.HoldingService;
+import io.qiao.validation.StockCodes;
 import jakarta.validation.Valid;
 
 /**
@@ -35,6 +36,16 @@ public class HoldingController {
 
 	public HoldingController(HoldingService holdingService) {
 		this.holdingService = holdingService;
+	}
+
+	/**
+	 * 這個 Controller 的每個畫面都會帶上股票代號規則，給表單頁的前端即時檢查使用。
+	 * （@ModelAttribute 方法：每次處理請求前都會執行，驗證失敗重新顯示表單時也會有）
+	 */
+	@ModelAttribute
+	public void addStockCodeRule(Model model) {
+		model.addAttribute("codePattern", StockCodes.PATTERN);
+		model.addAttribute("codeMessage", StockCodes.MESSAGE);
 	}
 
 	/** 清單（收盤價只讀記憶體快取，不會每次打開就查官方） */

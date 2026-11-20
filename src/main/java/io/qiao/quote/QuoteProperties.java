@@ -22,6 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param refreshInterval 背景排程：每一輪結束後隔多久再查下一輪
  * @param requestGap      背景排程：每一次請求之間至少間隔多久（避免被證交所擋）
  * @param marketCloseTime 收盤時間（台北時間）：這個時間之後才開始等「今天的收盤價」
+ * @param lookbackMonths  已存在的持股近兩個月都查不到時，再往前查幾個月找「最後一次成交」
  */
 @ConfigurationProperties(prefix = "app.quote")
 public record QuoteProperties(
@@ -35,5 +36,6 @@ public record QuoteProperties(
 		boolean refreshEnabled,
 		Duration refreshInterval,
 		Duration requestGap,
-		LocalTime marketCloseTime) {
+		LocalTime marketCloseTime,
+		int lookbackMonths) {
 }
