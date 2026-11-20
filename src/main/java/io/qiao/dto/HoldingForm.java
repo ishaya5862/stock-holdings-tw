@@ -43,8 +43,9 @@ public class HoldingForm {
 	}
 
 	public void setCode(String code) {
-		// 先去掉前後空白再驗證：使用者多打一個空白（「 2330」）不應該被判成格式錯誤
-		this.code = code == null ? null : code.trim();
+		// 先統一寫法再驗證：去掉所有空白、全形轉半形、轉大寫（「　２３ ３０」→「2330」），
+		// 使用者多打空白或用全形輸入，不應該被判成格式錯誤
+		this.code = StockCodes.normalize(code);
 	}
 
 	public Integer getLots() {

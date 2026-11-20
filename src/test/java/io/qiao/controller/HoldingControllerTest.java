@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,7 @@ import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
 import io.qiao.service.HoldingService;
+import jakarta.persistence.EntityManager;
 
 /**
  * 持股網頁測試：用 MockMvc 模擬瀏覽器送出表單，確認驗證錯誤會顯示在畫面上、資料不會被儲存。
@@ -60,6 +62,12 @@ class HoldingControllerTest {
 
 	@Autowired
 	private QuoteCache quoteCache;
+
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private EntityManager entityManager;
 
 	// ===== 第 4 題：清單的盈虧、收益率與頁面最上方的總計 =====
 
@@ -299,6 +307,15 @@ class HoldingControllerTest {
 	}
 
 	@Test
+	void 全形代號和空白自動統一後新增() throws Exception {
+		// 瀏覽器沒開 JavaScript 時，後端也要能把全形、空白統一（前端轉換只是方便，後端才是最後防線）
+		mockMvc.perform(post("/holdings").param("code", "　２３ ３０　").param("lots", "1").param("buyPrice", "100"))
+				.andExpect(redirectedUrl("/holdings"));
+
+		assertThat(holdingRepository.existsByCode("2330")).isTrue();
+	}
+
+	@Test
 	void 新增頁帶有前後端共用的代號規則() throws Exception {
 		mockMvc.perform(get("/holdings/new"))
 				.andExpect(content().string(containsString("data-pattern=\"^[0-9]{4,6}[A-Za-z]?$\"")))
@@ -323,6 +340,73 @@ class HoldingControllerTest {
 		Holding updated = holdingService.findById(saved.getId());
 		assertThat(updated.getCode()).isEqualTo("2330");
 		assertThat(updated.getLots()).isEqualTo(5);
+	}
+
+	// ===== 修改頁：代號只顯示、不放輸入框 =====
+
+	@Test
+	void 修改頁_代號名稱市場用資訊區塊顯示_沒有代號輸入框() throws Exception {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		mockMvc.perform(get("/holdings/{id}/edit", saved.getId()))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("id=\"stock-info\"")))
+				.andExpect(content().string(containsString("2330")))
+				.andExpect(content().string(containsString("台積電")))
+				.andExpect(content().string(containsString("上市")))
+				.andExpect(content().string(containsString("代號不能修改")))
+				// 代號不在表單欄位裡：沒有 id="code" 的輸入框，也不會送出 name="code"
+				.andExpect(content().string(not(containsString("id=\"code\""))))
+				.andExpect(content().string(not(containsString("name=\"code\""))));
+	}
+
+	@Test
+	void 新增頁_仍然有代號輸入框_沒有股票資訊區塊() throws Exception {
+		mockMvc.perform(get("/holdings/new"))
+				.andExpect(content().string(containsString("id=\"code\"")))
+				.andExpect(content().string(not(containsString("id=\"stock-info\""))));
+	}
+
+	@Test
+	void 修改_表單不帶代號_照常修改成功() throws Exception {
+		// 修改頁已經不送代號，後端要能正常處理（代號以資料庫為準）
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		mockMvc.perform(post("/holdings/{id}", saved.getId()).param("lots", "3").param("buyPrice", "950"))
+				.andExpect(redirectedUrl("/holdings"))
+				.andExpect(flash().attribute("successMessage", "已修改 2330"));
+
+		Holding updated = holdingService.findById(saved.getId());
+		assertThat(updated.getLots()).isEqualTo(3);
+		assertThat(updated.getBuyPrice()).isEqualByComparingTo("950");
+	}
+
+	@Test
+	void 修改_輸入錯誤重新顯示時_股票資訊區塊還在() throws Exception {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		mockMvc.perform(post("/holdings/{id}", saved.getId()).param("lots", "0").param("buyPrice", "950"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("id=\"stock-info\"")))
+				.andExpect(content().string(containsString("台積電")))
+				.andExpect(content().string(not(containsString("name=\"code\""))));
+	}
+
+	@Test
+	void 修改頁_舊資料還沒補上名稱和市場_顯示破折號_頁面正常() throws Exception {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+		// 模擬第 2 題時期留下的舊資料：stocks 只有代號，名稱、市場還沒由排程補上
+		entityManager.flush();
+		jdbcTemplate.update("UPDATE stocks SET name = NULL, market = NULL WHERE code = ?", "2330");
+		entityManager.clear();
+		// 名稱會優先用快取（記憶體）的行情，新增時已放進去 → 也要移除，模擬「排程還沒查到」
+		quoteCache.remove("2330");
+
+		mockMvc.perform(get("/holdings/{id}/edit", saved.getId()))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("—")))
+				.andExpect(content().string(not(containsString("台積電"))))
+				.andExpect(content().string(not(containsString("badge text-bg-secondary"))));
 	}
 
 	@Test
