@@ -3,7 +3,11 @@ package io.qiao.calculation;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.regex.Pattern;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -12,6 +16,7 @@ import org.springframework.stereotype.Component;
  * | 項目   | 規則                                                                 |
  * | 手續費 | 成交金額 × 0.1425%，無條件捨去到元，每筆最低 20 元；買進、賣出各收一次 |
  * | 證交稅 | 只有賣出收。一般股票 0.3%，ETF（代號 00 開頭）0.1%；無條件捨去到元     |
+ * |        | 2.0：債券 ETF（例 00679B）在停徵期間賣出免稅（第 7 題回報二，依賣出日期）  |
  * | 盈虧   | 賣出金額 − 賣出手續費 − 證交稅 − 買進金額 − 買進手續費                  |
  * | 收益率 | 盈虧 ÷（買進金額 ＋ 買進手續費）× 100，四捨五入到小數第二位             |
  *
@@ -35,7 +40,46 @@ public class ProfitCalculator {
 	/** 證交稅：ETF 0.1% */
 	private static final BigDecimal ETF_TAX_RATE = new BigDecimal("0.001");
 
+	/**
+	 * 債券 ETF 停徵證交稅的開始日：《證券交易稅條例》第 2 條之 1 第 2 項，106 年 1 月 1 日起（第 7 題回報二）。
+	 */
+	public static final LocalDate BOND_ETF_EXEMPT_FROM = LocalDate.of(2017, 1, 1);
+	/**
+	 * 停徵的結束日（預設）：現行條文是 115 年 12 月 31 日。延長到 2036 年的修正案 2026-11-11 初審通過、尚未三讀，
+	 * 所以預設照現行法；三讀後改設定 app.tax.bond-etf-exempt-until 即可，不用改程式（Q7-3 b）。
+	 */
+	public static final LocalDate DEFAULT_BOND_ETF_EXEMPT_UNTIL = LocalDate.of(2026, 12, 31);
+
+	/**
+	 * 債券 ETF 的代號：00＋3 碼流水號＋第 6 碼 B（以外幣交易者為 C），例如 00679B。
+	 * 依據《中華民國證券市場編碼原則》壹、十三（三）。槓桿型、反向型債券 ETF「準用」L／M、R／S，不會是 B／C，
+	 * 剛好就是稅法排除的「槓桿型及反向型」→ 用代號就能判斷，不需要額外的資料來源（Q7-2 a）。
+	 */
+	private static final Pattern BOND_ETF_CODE = Pattern.compile("^00\\d{3}[BC]$");
+
 	private static final BigDecimal HUNDRED = new BigDecimal("100");
+
+	/** 債券 ETF 停徵證交稅到哪一天（含當天） */
+	private final LocalDate bondEtfExemptUntil;
+
+	/** 單元測試直接 new 用：停徵期限照現行法（2026-12-31） */
+	public ProfitCalculator() {
+		this(DEFAULT_BOND_ETF_EXEMPT_UNTIL.toString());
+	}
+
+	/**
+	 * Spring 用：停徵期限從設定檔讀（app.tax.bond-etf-exempt-until，可用環境變數 BOND_ETF_TAX_EXEMPT_UNTIL 覆蓋）。
+	 * 用字串接再自己轉日期：格式錯誤時啟動就失敗，並清楚說明是哪個設定。
+	 */
+	@Autowired
+	public ProfitCalculator(@Value("${app.tax.bond-etf-exempt-until:2026-12-31}") String bondEtfExemptUntil) {
+		try {
+			this.bondEtfExemptUntil = LocalDate.parse(bondEtfExemptUntil.trim());
+		} catch (DateTimeParseException e) {
+			throw new IllegalArgumentException(
+					"app.tax.bond-etf-exempt-until 必須是 YYYY-MM-DD 格式的日期：" + bondEtfExemptUntil, e);
+		}
+	}
 
 	/**
 	 * 用張數計算（1.0 版使用）：張數 × 1,000 換成股數，再交給核心計算。
@@ -108,9 +152,8 @@ public class ProfitCalculator {
 	}
 
 	/**
-	 * 證交稅（只有賣出收）：一般股票 0.3%，ETF 0.1%，無條件捨去到元。
-	 *
-	 * Part B 第 7 題回報二（債券 ETF 停徵證交稅）若要修正，只需要改這個方法的稅率判斷。
+	 * 證交稅（不看日期）：一般股票 0.3%，ETF 0.1%，無條件捨去到元。第 4 題的規則（calculate 使用）。
+	 * 實際的持股計算（v1、v2、網頁）都經過 PositionCalculator，呼叫下面「帶賣出日期」的版本。
 	 */
 	public BigDecimal tax(String code, BigDecimal sellAmount) {
 		BigDecimal rate = isEtf(code) ? ETF_TAX_RATE : STOCK_TAX_RATE;
@@ -118,16 +161,30 @@ public class ProfitCalculator {
 	}
 
 	/**
-	 * 證交稅（預留「交易日期」參數，2.0 的 PositionCalculator 使用）。
+	 * 證交稅，依「賣出日期」判斷（2.0 的 PositionCalculator 使用；C1-3 預留的日期參數）。
 	 *
-	 * C1-3 決定：先加參數、規則不變（結果和 tax(code, sellAmount) 相同）。
-	 * Part B 第 7 題回報二（債券 ETF 證交稅停徵，期限 2026-12-31、延長案待三讀）要依「賣出日期」判斷時，
-	 * 只改這裡的規則，計算核心與呼叫端都不用再改參數。
+	 * 第 7 題回報二：債券 ETF 在停徵期間（2017-01-01～停徵期限，含頭尾）賣出 → 0 元；
+	 * 期間以外照一般 ETF 0.1%。已實現損益用當時的賣出日期；未實現損益用估價日（台北時間的今天），
+	 * 所以停徵到期、沒有延長時，從隔天起會自動恢復扣稅，不用改程式。
 	 *
-	 * @param tradeDate 賣出日期（目前未使用）
+	 * @param tradeDate 賣出日期（未實現損益是估價日）
 	 */
 	public BigDecimal tax(String code, BigDecimal sellAmount, LocalDate tradeDate) {
+		if (isBondEtfTaxExempt(code, tradeDate)) {
+			return BigDecimal.ZERO;
+		}
 		return tax(code, sellAmount);
+	}
+
+	/** 這一天賣出這檔，證交稅是否停徵（債券 ETF＋停徵期間內） */
+	public boolean isBondEtfTaxExempt(String code, LocalDate sellDate) {
+		return isBondEtf(code) && sellDate != null
+				&& !sellDate.isBefore(BOND_ETF_EXEMPT_FROM) && !sellDate.isAfter(bondEtfExemptUntil);
+	}
+
+	/** 債券 ETF 停徵證交稅到哪一天（網頁試算用，規則只有後端這一份） */
+	public LocalDate bondEtfExemptUntil() {
+		return bondEtfExemptUntil;
 	}
 
 	/**
@@ -135,6 +192,11 @@ public class ProfitCalculator {
 	 */
 	public boolean isEtf(String code) {
 		return code != null && code.startsWith("00");
+	}
+
+	/** 是否為債券 ETF（不含槓桿型、反向型）：代號第 6 碼是 B 或 C，例如 00679B */
+	public boolean isBondEtf(String code) {
+		return code != null && BOND_ETF_CODE.matcher(code).matches();
 	}
 
 	private static void requirePositive(BigDecimal value, String name) {

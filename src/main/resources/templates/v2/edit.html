@@ -110,7 +110,8 @@
 			side: /*[[${trade.side}]]*/ 'BUY',
 			shares: /*[[${trade.shares}]]*/ 300,
 			version: /*[[${trade.version}]]*/ 0,
-			closedDays: /*[[${closedDays}]]*/ {}
+			closedDays: /*[[${closedDays}]]*/ {},
+			bondEtfExempt: { from: /*[[${bondEtfExemptFrom}]]*/ '2017-01-01', until: /*[[${bondEtfExemptUntil}]]*/ '2026-12-31' }
 		};
 	</script>
 	<script>
@@ -150,7 +151,7 @@
 				document.getElementById('calc-fee').textContent = V2Form.formatCents(V2Form.feeYuan(amount) * 100n);
 				const tax = document.getElementById('calc-tax');
 				if (tax) {
-					tax.textContent = V2Form.formatCents(V2Form.taxYuan(PAGE.code, amount) * 100n);
+					tax.textContent = V2Form.formatCents(V2Form.taxYuan(PAGE.code, amount, date.value, PAGE.bondEtfExempt) * 100n);
 				}
 			}
 
