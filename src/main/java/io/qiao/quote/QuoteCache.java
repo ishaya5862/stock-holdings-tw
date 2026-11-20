@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * 為什麼放記憶體、不放資料庫？
  * 考官會把官方網址換成自己的測試伺服器再重開；放記憶體的話重開後一定會重新查，
  * 不會拿資料庫裡的舊官方價格當成「目前收盤價」（TRAPS C13）。
- * 資料庫裡的 last_close_price 只用來顯示「上次收盤價」。
+ * 資料庫 stocks 表的 last_close_price 只用來顯示「上次收盤價」。
  *
  * ConcurrentHashMap：排程（背景執行緒）在寫、網頁（其他執行緒）同時在讀，一般的 HashMap 不安全。
  */

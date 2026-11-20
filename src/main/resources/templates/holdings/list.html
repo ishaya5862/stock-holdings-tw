@@ -106,7 +106,7 @@
 								UPDATING    → 更新中…（這次啟動後還沒輪到查詢）
 								UNAVAILABLE → 未取得（官方連不上）
 								NO_RECENT_TRADE → 近期無成交資料（可能停止交易或已下市）＋ 最後收盤價（含年份，可能是好幾個月前）
-								更新中、未取得時，資料庫有上次收盤價就用小字顯示「上次收盤價 X（日期）」
+								更新中、未取得時，資料庫（stocks 表）有上次收盤價就用小字顯示「上次收盤價 X（日期）」
 							*/-->
 							<td class="text-end app-number text-nowrap" th:switch="${h.quoteStatus.name()}">
 								<th:block th:case="'OK'">
