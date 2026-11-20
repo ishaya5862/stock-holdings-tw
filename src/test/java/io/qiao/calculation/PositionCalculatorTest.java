@@ -392,11 +392,35 @@ class PositionCalculatorTest {
 	}
 
 	@Test
-	void 證交稅預留交易日期參數_目前規則不變() {
-		// C1-3：第 7 題（債券 ETF 停徵期限）要依日期判斷時，不用再改方法的參數
+	void 證交稅帶日期_一般股票與一般ETF規則不變() {
+		// C1-3 預留的日期參數：第 7 題只影響債券 ETF，其他照第 4 題
 		BigDecimal amount = new BigDecimal("150000");
 		assertThat(profitCalculator.tax("0050", amount, TODAY)).isEqualByComparingTo(profitCalculator.tax("0050", amount));
 		assertThat(profitCalculator.tax("2330", amount, TODAY)).isEqualByComparingTo(profitCalculator.tax("2330", amount));
+	}
+
+	@Test
+	void 債券ETF_已實現與未實現損益都不扣證交稅_停徵期間() {
+		// 第 7 題回報二：00679B 買 3,000 股 @30、賣 3,000 股 @31（2026-11-14，停徵期間）
+		// 買：90,000 + 手續費 128 = 90,128；賣：93,000 − 手續費 132 − 證交稅 0 − 成本 90,128 = 2,740
+		List<TradeInput> trades = List.of(buy(1L, D1, 3000, "30.00"), sell(2L, LocalDate.of(2026, 11, 14), 3000, "31.00"));
+
+		PositionResult result = calculator.calculate("00679B", trades, null, TODAY);
+
+		assertThat(result.lines().get(1).tax()).isEqualByComparingTo("0");
+		assertThat(result.realizedPnl()).isEqualByComparingTo("2740");
+
+		// 還持有、用收盤價估未實現（估價日 = 今天，停徵期間）→ 證交稅 0
+		PositionResult holding = calculator.calculate("00679B", List.of(buy(1L, D1, 3000, "30.00")), new BigDecimal("31.00"), TODAY);
+		assertThat(holding.unrealized().tax()).isEqualByComparingTo("0");
+	}
+
+	@Test
+	void 債券ETF_停徵到期後估價_自動恢復扣稅() {
+		// 沒有延長時，2027-01-01 起估未實現損益要扣 0.1%：93,000 × 0.1% = 93
+		PositionResult result = calculator.calculate("00679B", List.of(buy(1L, D1, 3000, "30.00")),
+				new BigDecimal("31.00"), LocalDate.of(2027, 1, 4));
+		assertThat(result.unrealized().tax()).isEqualByComparingTo("93");
 	}
 
 	// ===== 測試資料 =====

@@ -19,6 +19,7 @@ import org.springframework.web.servlet.support.RequestContextUtils;
 import io.qiao.api.v2.HoldingV2Response;
 import io.qiao.api.v2.SummaryV2Response;
 import io.qiao.api.v2.TradeV2Response;
+import io.qiao.calculation.ProfitCalculator;
 import io.qiao.exception.NotHeldException;
 import io.qiao.exception.TradeNotFoundException;
 import io.qiao.quote.TradingCalendar;
@@ -51,10 +52,13 @@ public class V2PageController {
 
 	private final PositionQueryService positionQueryService;
 	private final TradingCalendar tradingCalendar;
+	private final ProfitCalculator profitCalculator;
 
-	public V2PageController(PositionQueryService positionQueryService, TradingCalendar tradingCalendar) {
+	public V2PageController(PositionQueryService positionQueryService, TradingCalendar tradingCalendar,
+			ProfitCalculator profitCalculator) {
 		this.positionQueryService = positionQueryService;
 		this.tradingCalendar = tradingCalendar;
+		this.profitCalculator = profitCalculator;
 	}
 
 	/** 持股總覽 */
@@ -158,6 +162,9 @@ public class V2PageController {
 				closedDays.put(String.valueOf(year), days.stream().sorted().map(LocalDate::toString).toList()));
 		model.addAttribute("closedDays", closedDays);
 		model.addAttribute("earliestDate", TradeService.EARLIEST_DATE.toString());
+		// 賣出試算的證交稅：債券 ETF 停徵期限（第 7 題回報二）。期限在後端設定，前端只用這個值試算
+		model.addAttribute("bondEtfExemptFrom", ProfitCalculator.BOND_ETF_EXEMPT_FROM.toString());
+		model.addAttribute("bondEtfExemptUntil", profitCalculator.bondEtfExemptUntil().toString());
 	}
 
 	private static String redirectWithError(HttpServletRequest request, String message) {

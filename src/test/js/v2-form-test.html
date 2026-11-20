@@ -31,6 +31,15 @@
 	check('手續費 有分 3,346.65 → 20', V2Form.feeYuan(334665n), 20n);
 	check('證交稅 2330 130,000 → 390', V2Form.taxYuan('2330', 13000000n), 390n);
 	check('證交稅 0050 168,900 → 168', V2Form.taxYuan('0050', 16890000n), 168n);
+	// 第 7 題回報二：債券 ETF 停徵期間（規則同後端 ProfitCalculator）
+	const EXEMPT = { from: '2017-01-01', until: '2026-12-31' };
+	check('債券 ETF 停徵期間 → 0', V2Form.taxYuan('00679B', 9000000n, '2026-11-14', EXEMPT), 0n);
+	check('債券 ETF 期限當天 → 0', V2Form.taxYuan('00679B', 9000000n, '2026-12-31', EXEMPT), 0n);
+	check('債券 ETF 期限隔天 → 0.1%', V2Form.taxYuan('00679B', 9000000n, '2027-01-01', EXEMPT), 90n);
+	check('債券 ETF 停徵前 → 0.1%', V2Form.taxYuan('00679B', 9000000n, '2016-12-30', EXEMPT), 90n);
+	check('槓桿型債券 ETF 不停徵', V2Form.taxYuan('00680L', 9000000n, '2026-11-14', EXEMPT), 90n);
+	check('一般股票不受影響', V2Form.taxYuan('2330', 9000000n, '2026-11-14', EXEMPT), 270n);
+	check('延長到 2036（改設定）', V2Form.taxYuan('00679B', 9000000n, '2027-01-01', { from: '2017-01-01', until: '2036-12-31' }), 0n);
 	check('最大金額不失真', V2Form.formatCents(99999999n * 9999999999n), '9,999,999,899,000,000.01');
 	check('負數格式', V2Form.formatCents(-123456n), '−1,234.56');
 	check('API 金額字串轉分 368022.75', V2Form.plainToCents('368022.75'), 36802275n);

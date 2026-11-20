@@ -103,7 +103,9 @@
 			code: /*[[${holding.code}]]*/ '2330',
 			name: /*[[${holding.name}]]*/ '台積電',
 			held: /*[[${held}]]*/ {},
-			closedDays: /*[[${closedDays}]]*/ {}
+			closedDays: /*[[${closedDays}]]*/ {},
+			// 債券 ETF 停徵證交稅的期間（第 7 題回報二；期限在後端設定）
+			bondEtfExempt: { from: /*[[${bondEtfExemptFrom}]]*/ '2017-01-01', until: /*[[${bondEtfExemptUntil}]]*/ '2026-12-31' }
 		};
 	</script>
 	<script>
@@ -159,7 +161,8 @@
 				}
 				const amount = q.shares * p.cents;
 				const fee = V2Form.feeYuan(amount) * 100n;
-				const tax = V2Form.taxYuan(code, amount) * 100n;
+				const taxExempt = V2Form.isBondEtfTaxExempt(code, date.value, PAGE.bondEtfExempt);
+				const tax = V2Form.taxYuan(code, amount, date.value, PAGE.bondEtfExempt) * 100n;
 				// 分攤成本：全部賣出 → 剩下的成本全部；否則 成本 × 賣出股數 ÷ 持有股數，四捨五入到分（和後端相同）
 				const cost = q.shares === heldShares
 					? heldCostCents
@@ -167,7 +170,8 @@
 				const pnl = amount - fee - tax - cost;
 				document.getElementById('calc-amount').textContent = V2Form.formatCents(amount);
 				document.getElementById('calc-fee').textContent = V2Form.formatCents(fee);
-				document.getElementById('calc-tax-label').textContent = '− 證交稅（' + (code.startsWith('00') ? 'ETF 0.1%' : '0.3%') + '）';
+				document.getElementById('calc-tax-label').textContent = '− 證交稅（'
+					+ (taxExempt ? '債券 ETF 停徵' : code.startsWith('00') ? 'ETF 0.1%' : '0.3%') + '）';
 				document.getElementById('calc-tax').textContent = V2Form.formatCents(tax);
 				document.getElementById('calc-cost').textContent = V2Form.formatCents(cost);
 				const pnlCell = document.getElementById('calc-pnl');

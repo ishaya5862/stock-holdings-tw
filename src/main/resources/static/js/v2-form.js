@@ -273,8 +273,23 @@ window.V2Form = (function () {
 		return fee < 20n ? 20n : fee;
 	}
 
-	/** 證交稅（元）：一般股票 0.3%、ETF（00 開頭）0.1%，無條件捨去到元（試算用；債券 ETF 等例外以伺服器為準） */
-	function taxYuan(code, amountCents) {
+	/**
+	 * 債券 ETF（00＋3 碼＋B／C，例如 00679B）在這一天賣出是否停徵證交稅（第 7 題回報二；規則同後端 ProfitCalculator）。
+	 * @param exempt 伺服器放進頁面的停徵期間 { from: '2017-01-01', until: '2026-12-31' }（期限在後端設定）
+	 */
+	function isBondEtfTaxExempt(code, sellDate, exempt) {
+		return /^00\d{3}[BC]$/.test(code) && Boolean(exempt) && Boolean(sellDate)
+			&& sellDate >= exempt.from && sellDate <= exempt.until; // YYYY-MM-DD 字串可以直接比大小
+	}
+
+	/**
+	 * 證交稅（元）：一般股票 0.3%、ETF（00 開頭）0.1%，無條件捨去到元；債券 ETF 停徵期間 0 元。
+	 * 只是試算，實際以伺服器重算為準。
+	 */
+	function taxYuan(code, amountCents, sellDate, exempt) {
+		if (isBondEtfTaxExempt(code, sellDate, exempt)) {
+			return 0n;
+		}
 		const perMille = code.startsWith('00') ? 1n : 3n;
 		return amountCents * perMille / 100000n;
 	}
@@ -725,6 +740,7 @@ window.V2Form = (function () {
 		todayInTaipei: todayInTaipei,
 		feeYuan: feeYuan,
 		taxYuan: taxYuan,
+		isBondEtfTaxExempt: isBondEtfTaxExempt,
 		avgCents: avgCents,
 		formatCents: formatCents,
 		withCommas: withCommas,

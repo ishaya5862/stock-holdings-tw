@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 import org.junit.jupiter.api.Test;
 
@@ -98,6 +99,62 @@ class ProfitCalculatorTest {
 	void 證交稅_ETF千分之1_無條件捨去() {
 		// 145,550 × 0.1% = 145.55 → 145
 		assertThat(calculator.tax("0050", new BigDecimal("145550"))).isEqualByComparingTo("145");
+	}
+
+	// ===== 第 7 題回報二：債券 ETF 停徵證交稅（依賣出日期） =====
+	// 《證券交易稅條例》第 2 條之 1：2017-01-01～2026-12-31 停徵債券 ETF 證交稅，槓桿型、反向型不適用
+
+	@Test
+	void 債券ETF_停徵期間賣出_證交稅0元() {
+		// 回報二的情境：上週（2026-11）賣出 00679B 三張，假設 30 元 → 90,000 元，原本會扣 90 元
+		BigDecimal amount = new BigDecimal("90000");
+		assertThat(calculator.tax("00679B", amount, LocalDate.of(2026, 11, 14))).isEqualByComparingTo("0");
+		assertThat(calculator.tax("00679B", amount, LocalDate.of(2017, 1, 1))).isEqualByComparingTo("0");   // 開始那天
+		assertThat(calculator.tax("00679B", amount, LocalDate.of(2026, 12, 31))).isEqualByComparingTo("0"); // 期限當天
+	}
+
+	@Test
+	void 債券ETF_停徵期間以外_照ETF千分之1() {
+		BigDecimal amount = new BigDecimal("90000");
+		assertThat(calculator.tax("00679B", amount, LocalDate.of(2016, 12, 30))).isEqualByComparingTo("90"); // 停徵前
+		assertThat(calculator.tax("00679B", amount, LocalDate.of(2027, 1, 1))).isEqualByComparingTo("90");   // 期限隔天（沒有延長時）
+	}
+
+	@Test
+	void 停徵期限可以用設定延長_延長案三讀後不用改程式() {
+		ProfitCalculator extended = new ProfitCalculator("2036-12-31");
+		assertThat(extended.tax("00679B", new BigDecimal("90000"), LocalDate.of(2027, 1, 1))).isEqualByComparingTo("0");
+		assertThat(extended.bondEtfExemptUntil()).isEqualTo(LocalDate.of(2036, 12, 31));
+		assertThatThrownBy(() -> new ProfitCalculator("2036/12/31")).isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("app.tax.bond-etf-exempt-until");
+	}
+
+	@Test
+	void 槓桿型反向型債券ETF與一般ETF股票_不受停徵影響() {
+		BigDecimal amount = new BigDecimal("90000");
+		LocalDate inPeriod = LocalDate.of(2026, 11, 14);
+		assertThat(calculator.tax("00680L", amount, inPeriod)).isEqualByComparingTo("90");  // 美債20正2（槓桿）
+		assertThat(calculator.tax("00681R", amount, inPeriod)).isEqualByComparingTo("90");  // 美債20反1（反向）
+		assertThat(calculator.tax("0050", amount, inPeriod)).isEqualByComparingTo("90");
+		assertThat(calculator.tax("2330", amount, inPeriod)).isEqualByComparingTo("270");
+	}
+
+	@Test
+	void 債券ETF判斷_代號00加3碼加B或C() {
+		assertThat(calculator.isBondEtf("00679B")).isTrue();
+		assertThat(calculator.isBondEtf("00937B")).isTrue();
+		assertThat(calculator.isBondEtf("00123C")).isTrue();  // 以外幣交易的債券 ETF（編碼原則：C）
+		assertThat(calculator.isBondEtf("00680L")).isFalse(); // 槓桿型
+		assertThat(calculator.isBondEtf("00681R")).isFalse(); // 反向型
+		assertThat(calculator.isBondEtf("0050")).isFalse();
+		assertThat(calculator.isBondEtf("2881B")).isFalse();  // 不是 00 開頭（例如特別股）
+		assertThat(calculator.isBondEtf(null)).isFalse();
+	}
+
+	@Test
+	void 不看日期的第4題規則不變_債券ETF仍是千分之1() {
+		// 第 4 題的 tax(code, amount) 規則不變；實際持股計算都走帶日期的版本
+		assertThat(calculator.tax("00679B", new BigDecimal("90000"))).isEqualByComparingTo("90");
 	}
 
 	@Test
