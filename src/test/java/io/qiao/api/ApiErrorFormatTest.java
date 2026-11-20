@@ -71,6 +71,16 @@ class ApiErrorFormatTest {
 	}
 
 	@Test
+	void 不支援的HTTP方法_例如對總計送POST_回405與規格錯誤格式() throws Exception {
+		ResponseEntity<String> response = rest.exchange("/api/v1/summary", HttpMethod.POST, appRequest(), String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+		JsonNode body = objectMapper.readTree(response.getBody());
+		assertThat(body.path("error").path("code").asText()).isEqualTo("METHOD_NOT_ALLOWED");
+		assertThat(body.path("error").path("message").asText()).isNotEmpty();
+	}
+
+	@Test
 	void 網頁不存在的網址_維持原本的錯誤處理_不受API格式影響() {
 		HttpHeaders headers = new HttpHeaders();
 		headers.setAccept(List.of(MediaType.TEXT_HTML));

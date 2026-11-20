@@ -81,6 +81,18 @@ public class HoldingService {
 		return HoldingListView.of(findAllViews());
 	}
 
+	/**
+	 * 單一持股（含股票資訊、行情、盈虧）：App 的修改畫面用（GET /api/v1/holdings/{id}）。
+	 *
+	 * @throws HoldingNotFoundException 找不到這筆持股
+	 */
+	@Transactional(readOnly = true)
+	public HoldingView findViewById(Long id) {
+		Holding holding = findById(id);
+		Stock stock = stockService.findByCodes(List.of(holding.getCode())).get(holding.getCode());
+		return HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), profitCalculator);
+	}
+
 	@Transactional(readOnly = true)
 	public Holding findById(Long id) {
 		return holdingRepository.findById(id)
