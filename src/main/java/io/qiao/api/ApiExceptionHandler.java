@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.NotHeldException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
 import io.qiao.exception.UpgradeRequiredException;
@@ -65,6 +66,12 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(UpgradeRequiredException.class)
 	public ResponseEntity<ApiErrorResponse> handleUpgradeRequired(UpgradeRequiredException e) {
 		return error(ApiErrorCode.UPGRADE_REQUIRED, e.getMessage());
+	}
+
+	/** 2.0（v2）：目前沒有持有這個代號 → 404 NOT_HELD（例：「目前沒有持有 2330」） */
+	@ExceptionHandler(NotHeldException.class)
+	public ResponseEntity<ApiErrorResponse> handleNotHeld(NotHeldException e) {
+		return error(ApiErrorCode.NOT_HELD, e.getMessage());
 	}
 
 	/** 2.0：等鎖超過 3 秒（例如手機與電腦同時操作同一檔）→ 409，App 1.0 會顯示「資料正在更新，請稍後再試」 */

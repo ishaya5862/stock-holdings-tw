@@ -30,6 +30,9 @@ public enum ApiErrorCode {
 	 */
 	UPGRADE_REQUIRED(HttpStatus.CONFLICT),
 
+	/** 2.0（v2）：目前沒有持有這個代號（從沒買過，或最後一筆交易已刪除） */
+	NOT_HELD(HttpStatus.NOT_FOUND),
+
 	/** 2.0：同一檔持股正在被另一個請求寫入，等鎖超過 3 秒（C3-2）；稍後再試即可 */
 	HOLDING_BUSY(HttpStatus.CONFLICT),
 

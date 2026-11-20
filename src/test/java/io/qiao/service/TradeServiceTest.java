@@ -146,7 +146,7 @@ class TradeServiceTest {
 	void 賣出沒有持有過的代號_找不到() {
 		assertThatThrownBy(() -> tradeService.sell("2330", D1, 100, new BigDecimal("600.00")))
 				.isInstanceOf(NotHeldException.class)
-				.hasMessage("目前沒有持有 2330，無法賣出");
+				.hasMessage("目前沒有持有 2330");
 	}
 
 	@Test
