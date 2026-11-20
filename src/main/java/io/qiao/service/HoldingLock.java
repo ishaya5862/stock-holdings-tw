@@ -1,5 +1,6 @@
 package io.qiao.service;
 
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.springframework.dao.PessimisticLockingFailureException;
@@ -37,6 +38,17 @@ public class HoldingLock {
 	 */
 	public Holding byCode(String code, Supplier<? extends RuntimeException> notFound) {
 		return lock(() -> holdingRepository.findByCodeForUpdate(code).orElseThrow(notFound));
+	}
+
+	/**
+	 * 依代號鎖住持股；沒有這筆持股（例如等鎖期間被另一個裝置刪除）→ empty，由呼叫端決定怎麼處理。
+	 */
+	public Optional<Holding> byCodeIfPresent(String code) {
+		try {
+			return holdingRepository.findByCodeForUpdate(code);
+		} catch (PessimisticLockingFailureException e) {
+			throw new HoldingBusyException(e);
+		}
 	}
 
 	/**

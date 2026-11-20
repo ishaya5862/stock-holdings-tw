@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -161,6 +162,49 @@ class TradeConcurrencyTest {
 		assertThat(holdingRepository.count()).isEqualTo(1);
 		assertThat(tradeRepository.count()).isEqualTo(2);
 		assertThat(result.position().shares()).isEqualTo(500);
+	}
+
+	@Test
+	void 買進時持股剛被另一個裝置刪除_重新建立持股_不會回目前沒有持有() throws Exception {
+		Long oldId = tradeService.buy("2330", DAY, 1000, new BigDecimal("600.00")).holding().getId();
+		CountDownLatch deleted = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+
+		// 手機：刪掉 2330 的最後一筆交易（持股一起刪），刪完後還沒提交就卡住
+		Future<?> phone = threads.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+			Holding holding = holdingLock.byCode("2330", IllegalStateException::new);
+			tradeRepository.deleteByHoldingId(holding.getId());
+			holdingRepository.delete(holding);
+			holdingRepository.flush();
+			deleted.countDown();
+			await(release);
+		}));
+		await(deleted);
+
+		// 電腦：同時買進 2330。查得到持股（手機還沒提交）→ 排隊等鎖 → 手機提交後持股已不存在
+		Future<TradeResult> pc = threads.submit(() -> tradeService.buy("2330", DAY, 100, new BigDecimal("610.00")));
+		Thread.sleep(800); // 讓電腦先進入等鎖（等鎖上限 3 秒，這裡遠低於上限）
+		release.countDown();
+
+		TradeResult result = pc.get(10, TimeUnit.SECONDS);
+		phone.get(10, TimeUnit.SECONDS);
+		// 重新建立持股（新的 id），這次買進正確記錄，不會誤回「目前沒有持有 2330」
+		assertThat(result.holding().getId()).isNotEqualTo(oldId);
+		assertThat(result.position().shares()).isEqualTo(100);
+		assertThat(holdingRepository.count()).isEqualTo(1);
+		assertThat(tradeRepository.count()).isEqualTo(1);
+	}
+
+	@Test
+	void 建立持股時資料庫因為其他原因拒絕_回報原本的錯誤_不誤當成別人剛建立() {
+		// 官方回傳的名稱超過 stocks.name 的 50 字 → 資料庫拒絕（不是代號重複）
+		when(stockLookupService.lookup("2330")).thenReturn(new StockQuote("2330", "名".repeat(60), Market.TWSE,
+				new BigDecimal("650.00"), LocalDate.of(2026, 11, 20)));
+
+		assertThatThrownBy(() -> tradeService.buy("2330", DAY, 100, new BigDecimal("600.00")))
+				.isInstanceOf(DataIntegrityViolationException.class);
+		assertThat(holdingRepository.count()).isZero();
+		assertThat(tradeRepository.count()).isZero();
 	}
 
 	private static StockQuote quote(String code) {

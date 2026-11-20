@@ -19,6 +19,7 @@ import io.qiao.calculation.TradeInput;
 import io.qiao.calculation.TradeSide;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Trade;
+import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.InvalidTradeException;
 import io.qiao.exception.NotHeldException;
 import io.qiao.exception.TradeNotFoundException;
@@ -52,6 +53,8 @@ public class TradeService {
 	public static final BigDecimal MAX_PRICE = new BigDecimal("99999999.99");
 	/** 最早的交易日期（題目 1 a；資料庫也有同樣的 CHECK） */
 	public static final LocalDate EARLIEST_DATE = LocalDate.of(1990, 1, 1);
+	/** 買進最多試幾次（持股在交錯操作中被建立或刪除時重試；有上限，不會無限重試） */
+	static final int MAX_BUY_ATTEMPTS = 3;
 
 	private final HoldingRepository holdingRepository;
 	private final TradeRepository tradeRepository;
@@ -83,28 +86,48 @@ public class TradeService {
 	 * 買進。還沒持有的代號會先向官方確認存在（最多 9 秒，在交易外，不佔資料庫連線），再建立持股；
 	 * 已持有或已全部賣光的代號直接加一筆買進（不查官方）。
 	 *
+	 * 手機與電腦交錯操作時，持股可能「剛被建立」或「剛被刪除」（刪掉最後一筆交易會連持股一起刪），所以最多試 3 次：
+	 * 1. 持股不存在 → 建立持股＋買進；撞到代號唯一 = 另一個裝置剛建立了（C3-4）→ 下一步
+	 * 2. 持股存在 → 鎖住後加一筆買進；鎖住時持股已被另一個裝置刪除 → 回到 1
+	 * 3 次都被打斷（極少見，代表兩邊不斷在建立、刪除同一檔）→ 409 請稍後再試，不會無限重試。
+	 * 官方查詢整個流程最多只做一次（重試沿用同一份結果），回應時間才不會超過 App 的 10 秒。
+	 *
 	 * @throws io.qiao.exception.StockNotFoundException     上市、上櫃都查不到這個代號
 	 * @throws io.qiao.exception.QuoteUnavailableException 官方連不上，無法確認代號
+	 * @throws HoldingBusyException                        連續 3 次被其他裝置的建立、刪除打斷
 	 */
 	public TradeResult buy(String code, LocalDate tradeDate, long shares, BigDecimal price) {
 		String normalizedCode = StockCodes.normalize(code);
 		validate(tradeDate, shares, price);
 		LocalDateTime now = LocalDateTime.now(clock);
 
-		if (holdingRepository.findByCode(normalizedCode).isEmpty()) {
-			StockQuote quote = stockLookupService.lookup(normalizedCode); // 交易外：查官方時不佔資料庫連線
-			Optional<TradeResult> created = createHoldingAndBuy(quote, tradeDate, shares, price, now);
-			quoteCache.putSuccess(quote, now); // 剛查到的行情放進快取，回傳結果就有未實現損益
-			if (created.isPresent()) {
-				return recalculated(created.get());
+		StockQuote quote = null; // 需要建立持股時才查官方，而且只查一次
+		for (int attempt = 1; attempt <= MAX_BUY_ATTEMPTS; attempt++) {
+			if (holdingRepository.findByCode(normalizedCode).isEmpty()) {
+				if (quote == null) {
+					quote = stockLookupService.lookup(normalizedCode); // 交易外：查官方時不佔資料庫連線
+					quoteCache.putSuccess(quote, now); // 剛查到的行情放進快取，回傳結果就有未實現損益
+				}
+				Optional<TradeResult> created = createHoldingAndBuy(quote, tradeDate, shares, price, now);
+				if (created.isPresent()) {
+					return recalculated(created.get());
+				}
+				// C3-4：撞到代號唯一 → 另一個裝置剛好同時建立了這檔 → 改成加到已存在的持股
 			}
-			// C3-4：建立持股時撞到「代號唯一」→ 另一個裝置剛好同時建立了這檔 → 改成加到已存在的持股
+			Optional<TradeResult> added = inTransaction(() -> holdingLock.byCodeIfPresent(normalizedCode)
+					.map(holding -> addTrade(holding, TradeSide.BUY, tradeDate, shares, price, now)));
+			if (added.isPresent()) {
+				return recalculated(added.get());
+			}
+			// 鎖住時持股已被另一個裝置刪除（刪掉最後一筆交易）→ 重新建立
 		}
-		return recalculated(inTransaction(
-				() -> addTrade(lockByCode(normalizedCode), TradeSide.BUY, tradeDate, shares, price, now)));
+		throw new HoldingBusyException(null);
 	}
 
-	/** 建立持股＋第一筆買進（同一個交易）；代號已被另一個請求建立 → empty */
+	/**
+	 * 建立持股＋第一筆買進（同一個交易）；代號已被另一個請求建立 → empty。
+	 * 資料庫因為「代號重複」以外的原因拒絕（例如名稱太長）→ 照原本的錯誤丟出，不要誤當成「別人剛建立了」。
+	 */
 	private Optional<TradeResult> createHoldingAndBuy(StockQuote quote, LocalDate tradeDate, long shares,
 			BigDecimal price, LocalDateTime now) {
 		try {
@@ -118,7 +141,10 @@ public class TradeService {
 				return addTrade(holdingRepository.saveAndFlush(holding), TradeSide.BUY, tradeDate, shares, price, now);
 			}));
 		} catch (DataIntegrityViolationException e) {
-			return Optional.empty();
+			if (holdingRepository.findByCode(quote.code()).isPresent()) {
+				return Optional.empty(); // 確實是別人剛建立了這檔
+			}
+			throw e;
 		}
 	}
 
