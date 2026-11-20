@@ -2,17 +2,19 @@ package io.qiao.service;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import io.qiao.calculation.ProfitCalculator;
-import io.qiao.calculation.TradeSide;
+import io.qiao.calculation.PositionCalculator;
 import io.qiao.dto.HoldingListView;
 import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
@@ -22,6 +24,7 @@ import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
+import io.qiao.exception.UpgradeRequiredException;
 import io.qiao.quote.QuoteCache;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
@@ -30,14 +33,16 @@ import io.qiao.repository.TradeRepository;
 import io.qiao.validation.StockCodes;
 
 /**
- * 持股的新增、修改、刪除、查詢。
- * 網頁（第 2 題）和 API（第 5 題）共用這一層，規則只寫一次。
+ * 1.0 介面（App 1.0 的 /api/v1、第一版網頁）的持股新增、修改、刪除、查詢，規則只寫一次。
  *
- * 持股（holdings）只存使用者會改的欄位；股票名稱、市場別、上次收盤價在 stocks（StockService 負責寫入）。
+ * 2.0（第 6 題 C4）起：
+ * - 讀取：張數、買進價、盈虧都由交易紀錄（trades）重算（PositionCalculator），再換成 1.0 的樣子（HoldingView）。
+ * - 全部賣光（0 股）的持股：1.0 看不到（清單、總計不出現，單筆、修改、刪除都當成找不到）（C4-5）。
+ * - 新增：代號已有持股 → 409（v1 規格）；已全部賣光 → 沿用原本的持股列，加一筆買進（C4-5）。
+ * - 修改：只有「整張、一筆買進」（1.0 可以完整表達）時允許，改那一筆買進；其他拒絕並請使用者更新到 2.0（C4-3）。
+ * - 刪除：只有一筆交易時允許；其他拒絕，避免 1.0 使用者誤刪 2.0 的買賣紀錄（C4-4）。
  *
- * 2.0 過渡期（第 6 題 C2，「擴充 → 遷移 → 收縮」的雙寫階段）：
- * 1.0 的新增、修改、刪除除了寫 holdings 的張數、買進價，也同步寫 trades（每筆持股剛好一筆買進），
- * 讓每個版本的資料都一致。C4 改成由 trades 計算輸出後，再刪除 holdings 的舊欄位（V6）。
+ * 股票名稱、市場別、上次收盤價在 stocks（StockService 負責寫入）。
  */
 @Service
 public class HoldingService {
@@ -47,40 +52,39 @@ public class HoldingService {
 	private final StockService stockService;
 	private final StockLookupService stockLookupService;
 	private final QuoteCache quoteCache;
-	private final ProfitCalculator profitCalculator;
+	private final PositionCalculator positionCalculator;
 	private final TransactionTemplate transactionTemplate;
 	private final Clock clock;
 
 	public HoldingService(HoldingRepository holdingRepository, TradeRepository tradeRepository, StockService stockService,
-			StockLookupService stockLookupService, QuoteCache quoteCache, ProfitCalculator profitCalculator,
+			StockLookupService stockLookupService, QuoteCache quoteCache, PositionCalculator positionCalculator,
 			TransactionTemplate transactionTemplate, Clock clock) {
 		this.holdingRepository = holdingRepository;
 		this.tradeRepository = tradeRepository;
 		this.stockService = stockService;
 		this.stockLookupService = stockLookupService;
 		this.quoteCache = quoteCache;
-		this.profitCalculator = profitCalculator;
+		this.positionCalculator = positionCalculator;
 		this.transactionTemplate = transactionTemplate;
 		this.clock = clock;
 	}
 
-	@Transactional(readOnly = true)
-	public List<Holding> findAll() {
-		return holdingRepository.findAllByOrderByCodeAsc();
-	}
-
 	/**
-	 * 清單用：每筆持股＋股票資訊＋快取裡的行情＋盈虧。
+	 * 清單用：每筆持股＋股票資訊＋快取裡的行情＋由交易重算的結果。0 股的持股不出現（C4-5）。
 	 * 只讀資料庫與記憶體快取，不會向官方查詢（題目第 3 題要求 3）。
-	 * 股票資訊一次查出所有代號再配對，查詢次數固定 2 次，不會每一筆持股各查一次。
+	 * 持股、股票、交易各一次查詢後在記憶體配對，查詢次數固定 3 次，不會每一筆持股各查一次。
 	 */
 	@Transactional(readOnly = true)
 	public List<HoldingView> findAllViews() {
 		List<Holding> holdings = holdingRepository.findAllByOrderByCodeAsc();
 		Map<String, Stock> stocks = stockService.findByCodes(holdings.stream().map(Holding::getCode).toList());
+		Map<Long, List<Trade>> tradesByHolding = tradeRepository.findAllByOrderByHoldingIdAscTradeDateAscIdAsc().stream()
+				.collect(Collectors.groupingBy(Trade::getHoldingId));
+		LocalDate today = LocalDate.now(clock);
 		return holdings.stream()
-				.map(holding -> HoldingView.of(holding, stocks.get(holding.getCode()),
-						quoteCache.get(holding.getCode()).orElse(null), profitCalculator))
+				.map(holding -> toView(holding, stocks.get(holding.getCode()),
+						tradesByHolding.getOrDefault(holding.getId(), List.of()), today))
+				.filter(view -> view.shares() > 0)
 				.toList();
 	}
 
@@ -94,15 +98,19 @@ public class HoldingService {
 	}
 
 	/**
-	 * 單一持股（含股票資訊、行情、盈虧）：App 的修改畫面用（GET /api/v1/holdings/{id}）。
+	 * 單一持股：App 的修改畫面用（GET /api/v1/holdings/{id}）、網頁修改頁用。
 	 *
-	 * @throws HoldingNotFoundException 找不到這筆持股
+	 * @throws HoldingNotFoundException 找不到這筆持股，或已全部賣光（1.0 看不到 0 股的持股）
 	 */
 	@Transactional(readOnly = true)
 	public HoldingView findViewById(Long id) {
 		Holding holding = findById(id);
 		Stock stock = stockService.findByCodes(List.of(holding.getCode())).get(holding.getCode());
-		return HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), profitCalculator);
+		HoldingView view = toView(holding, stock, tradesOf(id), LocalDate.now(clock));
+		if (view.shares() == 0) {
+			throw new HoldingNotFoundException(id);
+		}
+		return view;
 	}
 
 	@Transactional(readOnly = true)
@@ -112,34 +120,34 @@ public class HoldingService {
 	}
 
 	/**
-	 * 新增持股：先檢查重複，再向官方確認代號存在（並取得名稱、市場別、最近收盤價），最後儲存。
-	 *
-	 * 寫入順序：先寫 stocks（股票資訊），再寫 holdings（外鍵規定持股的代號一定要在股票表裡），最後寫 trades（一筆買進）。
+	 * 新增持股（1.0：張數＋買進價）。
+	 * - 代號已有持股（股數 > 0）→ DuplicateCodeException（v1 規格 409）
+	 * - 代號曾經持有、已全部賣光 → 沿用原本的持股列，加一筆買進（C4-5；1.0 使用者看起來就是「新增」）
+	 * - 從沒持有過 → 向官方確認代號存在（並取得名稱、市場別、最近收盤價），建立持股列＋一筆買進
 	 *
 	 * 注意：這個方法沒有加 @Transactional。查官方最多要等 9 秒，
-	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；查完官方後，三個寫入用 TransactionTemplate
+	 * 不應該在這段時間佔用資料庫連線（交易開始就會佔用一條連線）；查完官方後，寫入用 TransactionTemplate
 	 * 包成同一個交易：任何一步失敗就全部復原，不會出現「有持股、沒有交易紀錄」。
 	 *
-	 * @throws DuplicateCodeException     代號已存在
+	 * @throws DuplicateCodeException     代號已有持股
 	 * @throws StockNotFoundException     上市、上櫃都查不到這個代號（資料不儲存）
 	 * @throws QuoteUnavailableException 官方連不上，無法確認代號是否存在（資料不儲存）
 	 */
 	public Holding create(String code, Integer lots, BigDecimal buyPrice) {
 		String normalizedCode = normalizeCode(code);
+		LocalDateTime now = LocalDateTime.now(clock);
 
-		// 第一道檢查：先查有沒有重複（不用浪費一次官方查詢），給使用者清楚的錯誤訊息
-		if (holdingRepository.existsByCode(normalizedCode)) {
-			throw new DuplicateCodeException(normalizedCode);
+		// 第一道檢查：先查有沒有這個代號（不用浪費一次官方查詢），給使用者清楚的錯誤訊息
+		Optional<Holding> existing = holdingRepository.findByCode(normalizedCode);
+		if (existing.isPresent()) {
+			return rebuySoldOut(existing.get(), lots, buyPrice, now);
 		}
 
 		// 向官方確認代號存在，同時判斷上市／上櫃（查不到或連不上會丟例外，資料就不會儲存）
 		StockQuote quote = stockLookupService.lookup(normalizedCode);
 
-		LocalDateTime now = LocalDateTime.now(clock);
 		Holding holding = new Holding();
 		holding.setCode(normalizedCode);
-		holding.setLots(lots);
-		holding.setBuyPrice(buyPrice);
 		holding.setCreatedAt(now);
 		holding.setUpdatedAt(now);
 
@@ -150,12 +158,12 @@ public class HoldingService {
 				stockService.recordQuote(quote);
 				// saveAndFlush：立刻寫入資料庫，讓 UNIQUE 限制的錯誤在這裡就發生，才能轉成 DuplicateCodeException
 				Holding inserted = holdingRepository.saveAndFlush(holding);
-				// 2.0 雙寫：同一筆持股的買進紀錄（App 1.0 沒有日期 → 台北時區的今天，標記推估）
+				// 1.0 只有張數、買進價：記成一筆買進（沒有日期 → 台北時區的今天，標記推估）
 				tradeRepository.save(Trade.v1Buy(inserted.getId(), lots, buyPrice, now));
 				return inserted;
 			});
 		} catch (DataIntegrityViolationException e) {
-			// 第二道檢查（最後防線）：兩個人「同時」新增同一個代號時，第一道檢查都會通過，由資料庫的 UNIQUE／主鍵限制擋下
+			// 第二道檢查（最後防線）：兩個人「同時」新增同一個代號時，第一道檢查都會通過，由資料庫的 UNIQUE 限制擋下
 			throw new DuplicateCodeException(normalizedCode);
 		}
 
@@ -164,48 +172,76 @@ public class HoldingService {
 		return saved;
 	}
 
+	/** 代號已有持股列：還有股數 → 重複；已全部賣光 → 沿用這一列，加一筆買進（C4-5） */
+	private Holding rebuySoldOut(Holding holding, Integer lots, BigDecimal buyPrice, LocalDateTime now) {
+		return transactionTemplate.execute(status -> {
+			if (currentShares(holding.getId()) > 0) {
+				throw new DuplicateCodeException(holding.getCode());
+			}
+			tradeRepository.save(Trade.v1Buy(holding.getId(), lots, buyPrice, now));
+			holding.setUpdatedAt(now);
+			return holdingRepository.save(holding);
+		});
+	}
+
 	/**
-	 * 修改持股：只能改張數和買進價，代號不能改（與 App 1.0 API 規格一致）。
-	 * 只會寫到 holdings；股票資訊在 stocks，背景排程同時寫行情也不會互相覆寫。
+	 * 修改持股（1.0：張數＋買進價，代號不能改）。
+	 * 只有 1.0 可以完整表達的持股（整張、只有一筆買進）才允許，改那一筆買進的股數、價格（日期不變）。
 	 *
-	 * @throws HoldingNotFoundException 找不到這筆持股
+	 * @throws HoldingNotFoundException  找不到這筆持股，或已全部賣光
+	 * @throws UpgradeRequiredException 這筆持股有零股、多次買進或賣出紀錄（C4-3，API 回 409）
 	 */
 	@Transactional
 	public Holding update(Long id, Integer lots, BigDecimal buyPrice) {
 		Holding holding = findById(id);
-		LocalDateTime now = LocalDateTime.now(clock);
-		holding.setLots(lots);
-		holding.setBuyPrice(buyPrice);
-		holding.setUpdatedAt(now);
-
-		// 2.0 雙寫：1.0 的持股剛好對應一筆買進，同步修改它的股數與價格（日期不變）
-		// 有多筆交易或有賣出的持股是 2.0 才會出現的情況，v1 怎麼處理在 C4 決定；這裡先明確擋下，不默默改壞資料
-		List<Trade> trades = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(id);
-		if (trades.size() != 1 || trades.get(0).getSide() != TradeSide.BUY) {
-			throw new IllegalStateException("持股 " + id + " 不是「只有一筆買進」，1.0 的修改方式不適用（C4 處理）");
+		HoldingView view = findViewById(id);
+		if (!view.v1Representable()) {
+			throw new UpgradeRequiredException(holding.getCode(), "修改", view.v1Limits());
 		}
-		Trade trade = trades.get(0);
+
+		LocalDateTime now = LocalDateTime.now(clock);
+		Trade trade = tradesOf(id).get(0); // 1.0 可以完整表達 → 剛好一筆買進
 		trade.setShares((long) lots * 1000);
 		trade.setPrice(buyPrice);
 		trade.setUpdatedAt(now);
-
+		holding.setUpdatedAt(now);
 		// 在交易（@Transactional）內修改查出來的 Entity，結束時 JPA 會自動寫回資料庫，不需要再呼叫 save
 		return holding;
 	}
 
 	/**
-	 * 刪除持股（連同它的全部交易紀錄）。股票資訊（stocks）保留：排程只查有人持有的股票。
-	 * 外鍵不設連帶刪除（C2-2），所以這裡明確「先刪交易、再刪持股」，刪除範圍寫在程式裡看得見。
+	 * 刪除持股（連同它的交易紀錄）。股票資訊（stocks）保留：排程只查有人持有的股票。
+	 * 只有一筆交易時允許（C4-4）；外鍵不設連帶刪除（C2-2），所以這裡明確「先刪交易、再刪持股」。
 	 *
-	 * @throws HoldingNotFoundException 找不到這筆持股
+	 * @throws HoldingNotFoundException  找不到這筆持股，或已全部賣光
+	 * @throws UpgradeRequiredException 這筆持股有多筆交易（避免 1.0 使用者誤刪 2.0 的買賣紀錄，API 回 409）
 	 */
 	@Transactional
 	public void delete(Long id) {
 		Holding holding = findById(id);
+		HoldingView view = findViewById(id); // 0 股 → 找不到（1.0 看不到）
+		if (tradesOf(id).size() != 1) {
+			throw new UpgradeRequiredException(holding.getCode(), "刪除", view.v1Limits());
+		}
 		tradeRepository.deleteByHoldingId(id);
 		holdingRepository.delete(holding);
 		// 同一個代號只會有一筆持股，刪掉後快取也不需要了
 		quoteCache.remove(holding.getCode());
+	}
+
+	private HoldingView toView(Holding holding, Stock stock, List<Trade> trades, LocalDate today) {
+		return HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), trades,
+				positionCalculator, today);
+	}
+
+	private List<Trade> tradesOf(Long holdingId) {
+		return tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(holdingId);
+	}
+
+	/** 目前股數（依交易重算；不需要收盤價） */
+	private long currentShares(Long holdingId) {
+		return positionCalculator.calculate("", tradesOf(holdingId).stream().map(Trade::toInput).toList(),
+				null, LocalDate.now(clock)).shares();
 	}
 
 	/**

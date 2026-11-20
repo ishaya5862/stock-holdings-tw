@@ -60,6 +60,8 @@ public class PositionCalculator {
 
 		long shares = 0;
 		BigDecimal remainingCost = zero();
+		// 剩餘的買進金額（不含手續費）：只用來算 v1 的 buy_price（平均買進價），分攤方式和剩餘成本相同（C4-2）
+		BigDecimal remainingAmount = zero();
 		BigDecimal realizedPnl = zero();
 		List<TradeLine> lines = new ArrayList<>(ordered.size());
 
@@ -70,6 +72,7 @@ public class PositionCalculator {
 			if (trade.side() == TradeSide.BUY) {
 				shares += trade.shares();
 				remainingCost = toCents(remainingCost.add(amount).add(fee));
+				remainingAmount = toCents(remainingAmount.add(amount));
 				lines.add(new TradeLine(trade, amount, fee, null, null, null, shares, remainingCost));
 				continue;
 			}
@@ -79,14 +82,13 @@ public class PositionCalculator {
 				throw new OversellException(trade, shares);
 			}
 			BigDecimal tax = profitCalculator.tax(code, amount, trade.tradeDate());
-			BigDecimal costOfSold = trade.shares() == shares
-					? remainingCost // 全部賣出：剩下的成本全部拿走，剩餘成本剛好歸零、不留零頭
-					: remainingCost.multiply(BigDecimal.valueOf(trade.shares()))
-							.divide(BigDecimal.valueOf(shares), 2, RoundingMode.HALF_UP);
+			BigDecimal costOfSold = allocate(remainingCost, trade.shares(), shares);
+			BigDecimal amountOfSold = allocate(remainingAmount, trade.shares(), shares);
 			BigDecimal realized = toCents(amount.subtract(fee).subtract(tax).subtract(costOfSold));
 
 			shares -= trade.shares();
 			remainingCost = toCents(remainingCost.subtract(costOfSold));
+			remainingAmount = toCents(remainingAmount.subtract(amountOfSold));
 			realizedPnl = realizedPnl.add(realized);
 			lines.add(new TradeLine(trade, amount, fee, tax, costOfSold, realized, shares, remainingCost));
 		}
@@ -94,11 +96,25 @@ public class PositionCalculator {
 		BigDecimal averageCost = shares == 0
 				? null
 				: remainingCost.divide(BigDecimal.valueOf(shares), 2, RoundingMode.HALF_UP);
+		BigDecimal averageBuyPrice = shares == 0
+				? null
+				: remainingAmount.divide(BigDecimal.valueOf(shares), 2, RoundingMode.HALF_UP);
 		Unrealized unrealized = (closePrice == null || shares == 0)
 				? null
 				: unrealized(code, shares, remainingCost, closePrice, valuationDate);
 
-		return new PositionResult(shares, remainingCost, averageCost, realizedPnl, unrealized, List.copyOf(lines));
+		return new PositionResult(shares, remainingCost, remainingAmount, averageCost, averageBuyPrice, realizedPnl,
+				unrealized, List.copyOf(lines));
+	}
+
+	/**
+	 * 賣出時分攤：全部賣出 → 剩下的全部（剛好歸零、不留零頭）；否則 剩餘 × 賣出股數 ÷ 持有股數，四捨五入到分。
+	 * 成本（含手續費）與買進金額（不含手續費）用同一套分攤方式。
+	 */
+	private static BigDecimal allocate(BigDecimal remaining, long sold, long held) {
+		return sold == held
+				? remaining
+				: remaining.multiply(BigDecimal.valueOf(sold)).divide(BigDecimal.valueOf(held), 2, RoundingMode.HALF_UP);
 	}
 
 	/** 未實現損益：照舊沿用第 4 題的公式，只是成本換成「剩餘成本」 */

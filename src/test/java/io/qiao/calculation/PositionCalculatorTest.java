@@ -57,7 +57,35 @@ class PositionCalculatorTest {
 			assertThat(result.unrealized().pnl()).as(code).isEqualByComparingTo(old.pnl());
 			assertThat(result.unrealized().returnPct()).as(code).isEqualByComparingTo((String) e[5]);
 			assertThat(result.unrealized().marketValue()).as(code).isEqualByComparingTo(old.sellAmount());
+			// C4-2：v1 的 buy_price 用「平均買進價（不含手續費）」→ 只有一筆買進時剛好等於原本的買進價
+			assertThat(result.averageBuyPrice()).as(code).isEqualByComparingTo(price);
 		}
+	}
+
+	@Test
+	void 平均買進價不含手續費_多次買進加權_賣出後不變() {
+		// 買進金額 180,000 + 310,000 = 490,000 ÷ 800 股 = 612.50（不含手續費；含手續費的平均成本是 613.37）
+		// 賣 200 股：分攤買進金額 490,000 × 200 ÷ 800 = 122,500 → 剩 367,500 ÷ 600 = 612.50（不變）
+		List<TradeInput> trades = List.of(
+				buy(1L, D1, 300, "600.00"),
+				buy(2L, D2, 500, "620.00"),
+				sell(3L, D3, 200, "700.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.remainingAmount()).isEqualByComparingTo("367500");
+		assertThat(result.averageBuyPrice()).isEqualByComparingTo("612.50");
+		assertThat(result.averageCost()).isEqualByComparingTo("613.37");
+	}
+
+	@Test
+	void 全部賣光後_平均買進價也沒有值() {
+		List<TradeInput> trades = List.of(buy(1L, D1, 3, "10.00"), sell(2L, D2, 3, "11.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.remainingAmount()).isEqualByComparingTo("0");
+		assertThat(result.averageBuyPrice()).isNull();
 	}
 
 	// ===== 討論時用的完整範例（台積電：兩次買進、賣出一部分） =====

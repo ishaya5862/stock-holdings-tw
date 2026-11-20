@@ -24,6 +24,15 @@ public enum ApiErrorCode {
 	/** 官方行情連不上，無法確認代號是否存在（D-1 決定：503） */
 	QUOTE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),
 
+	/**
+	 * 2.0：這筆持股有零股、多次買進或賣出紀錄，1.0 的修改或刪除會破壞它（C4-3、C4-4）。
+	 * 用 409（和目前資料狀態衝突）比 400（輸入錯誤）準確；App 1.0 任何狀態碼都會顯示 message。
+	 */
+	UPGRADE_REQUIRED(HttpStatus.CONFLICT),
+
+	/** 2.0：App 2.0（X-Client: app2）呼叫了 v1，請改用 /api/v2（M4，防止誤用） */
+	USE_API_V2(HttpStatus.BAD_REQUEST),
+
 	/** HTTP 方法不支援（例如對 /api/v1/summary 送 POST） */
 	METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED),
 

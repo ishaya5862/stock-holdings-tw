@@ -16,7 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * V5（第 6 題 C2）遷移測試：用「1.0 留下的資料庫」升級到 2.0，舊持股要正確轉成買進紀錄。
+ * V5、V6（第 6 題 C2、C4）遷移測試：用「1.0 留下的資料庫」升級到 2.0，舊持股要正確轉成買進紀錄，舊欄位最後刪除。
  *
  * 做法：每個測試開一個獨立的 H2 記憶體資料庫（MySQL 相容模式，和其他測試相同），
  * Flyway 先只跑到 V4（= v1.1.0 的資料庫）→ 塞入 1.0 的資料 → 再跑到最新版 → 檢查。
@@ -43,7 +43,7 @@ class V5MigrationTest {
 				"INSERT INTO holdings (id, code, lots, buy_price, created_at, updated_at) VALUES (12, '0050', 2, 180.00, '2026-10-15 23:59:59', '2026-10-20 10:00:00')",
 				"INSERT INTO holdings (id, code, lots, buy_price, created_at, updated_at) VALUES (7, '2330', 999, 1066.67, '2026-11-01 00:00:00', '2026-11-01 00:00:00')");
 
-		migrateTo(null);
+		migrateTo("5"); // 只跑 V5（V6 會刪掉舊欄位，另一個測試專門測）
 
 		try (Connection connection = connect(); Statement statement = connection.createStatement();
 				ResultSet rs = statement.executeQuery(
@@ -68,9 +68,23 @@ class V5MigrationTest {
 			assertThat(rs.next()).isFalse(); // 一筆持股剛好一筆交易
 		}
 
-		// 持股加上版本號，預設 0；舊欄位（lots、buy_price）先保留，C4 之後才在 V6 刪除
+		// 持股加上版本號，預設 0；舊欄位（lots、buy_price）V5 先保留（擴充 → 遷移 → 收縮），V6 才刪除
 		assertThat(queryLong("SELECT version FROM holdings WHERE id = 12")).isZero();
 		assertThat(queryLong("SELECT lots FROM holdings WHERE id = 12")).isEqualTo(2);
+	}
+
+	@Test
+	void 一點零升到最新版_V6刪掉舊欄位_交易紀錄完整保留() throws SQLException {
+		// 第 8 題的情境：停掉 1.0、用 1.0 留下的資料庫（V4）直接啟動 2.0（一次跑完 V5、V6）
+		migrateTo("4");
+		execute("INSERT INTO stocks (code, updated_at) VALUES ('2330', '2026-11-20 09:00:00')",
+				"INSERT INTO holdings (id, code, lots, buy_price, created_at, updated_at) VALUES (7, '2330', 3, 980.50, '2026-11-20 09:00:00', '2026-11-20 09:00:00')");
+
+		migrateTo(null);
+
+		assertThat(queryLong("SELECT shares FROM trades WHERE holding_id = 7")).isEqualTo(3000);
+		assertThat(queryLong("SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'holdings' AND column_name IN ('lots', 'buy_price')"))
+				.as("V6 刪除 holdings.lots、buy_price").isZero();
 	}
 
 	@Test
@@ -84,7 +98,7 @@ class V5MigrationTest {
 	void 資料庫限制_股數價格要大於零_種類只能買賣_日期不能早於1990() throws SQLException {
 		migrateTo(null);
 		execute("INSERT INTO stocks (code, updated_at) VALUES ('2330', '2026-11-20 09:00:00')",
-				"INSERT INTO holdings (id, code, lots, buy_price, created_at, updated_at) VALUES (1, '2330', 1, 10, '2026-11-20 09:00:00', '2026-11-20 09:00:00')");
+				"INSERT INTO holdings (id, code, created_at, updated_at) VALUES (1, '2330', '2026-11-20 09:00:00', '2026-11-20 09:00:00')");
 
 		assertThatThrownBy(() -> insertTrade("BUY", "2026-11-20", 0, "10.00")).isInstanceOf(SQLException.class);
 		assertThatThrownBy(() -> insertTrade("BUY", "2026-11-20", 100, "0")).isInstanceOf(SQLException.class);
@@ -100,7 +114,7 @@ class V5MigrationTest {
 		// C2-2：外鍵不連帶刪除，避免誤刪持股就默默清掉交易歷史
 		migrateTo(null);
 		execute("INSERT INTO stocks (code, updated_at) VALUES ('2330', '2026-11-20 09:00:00')",
-				"INSERT INTO holdings (id, code, lots, buy_price, created_at, updated_at) VALUES (1, '2330', 1, 10, '2026-11-20 09:00:00', '2026-11-20 09:00:00')");
+				"INSERT INTO holdings (id, code, created_at, updated_at) VALUES (1, '2330', '2026-11-20 09:00:00', '2026-11-20 09:00:00')");
 		insertTrade("BUY", "2026-11-20", 1000, "10.00");
 
 		assertThatThrownBy(() -> execute("DELETE FROM holdings WHERE id = 1")).isInstanceOf(SQLException.class);

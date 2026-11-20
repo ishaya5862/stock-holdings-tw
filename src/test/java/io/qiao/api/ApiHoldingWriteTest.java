@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
 import io.qiao.exception.QuoteUnavailableException;
@@ -295,9 +296,9 @@ class ApiHoldingWriteTest {
 				.andExpect(jsonPath("$.lots").value(2))
 				.andExpect(jsonPath("$.buy_price").value(980.50));
 
-		Holding saved = holdingRepository.findById(id).orElseThrow();
-		assertThat(saved.getLots()).isEqualTo(2);
-		assertThat(saved.getBuyPrice()).isEqualByComparingTo("980.50");
+		HoldingView saved = holdingService.findViewById(id); // 2.0：張數、買進價改由交易紀錄算出（1.0 看到的值）
+		assertThat(saved.lots()).isEqualTo(2L);
+		assertThat(saved.buyPrice()).isEqualByComparingTo("980.50");
 	}
 
 	@Test
@@ -326,7 +327,7 @@ class ApiHoldingWriteTest {
 		Long id = holdingService.create("2330", 1, new BigDecimal("1000")).getId();
 
 		expectError(putJson(id, "{\"lots\":\"1.5\",\"buy_price\":1000}"), 400, "VALIDATION_ERROR", "張數必須是 1～999 的整數");
-		assertThat(holdingRepository.findById(id).orElseThrow().getLots()).isEqualTo(1);
+		assertThat(holdingService.findViewById(id).lots()).isEqualTo(1L);
 	}
 
 	@Test
@@ -342,7 +343,7 @@ class ApiHoldingWriteTest {
 		makeLegacy("2330");
 
 		putJson(id, "{\"lots\":2,\"buy_price\":1000}").andExpect(status().isNotFound());
-		assertThat(holdingRepository.findById(id).orElseThrow().getLots()).isEqualTo(1);
+		assertThat(holdingService.findViewById(id).lots()).isEqualTo(1L);
 	}
 
 	// ===== DELETE /api/v1/holdings/{id} =====

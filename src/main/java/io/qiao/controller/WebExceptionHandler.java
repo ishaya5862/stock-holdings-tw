@@ -6,6 +6,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.support.RequestContextUtils;
 
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.UpgradeRequiredException;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
@@ -23,6 +24,16 @@ public class WebExceptionHandler {
 	public String handleNotFound(HttpServletRequest request) {
 		// 用 FlashMap 帶訊息到轉址後的清單頁（效果同 RedirectAttributes.addFlashAttribute）
 		RequestContextUtils.getOutputFlashMap(request).put("errorMessage", "找不到這筆持股，可能已被刪除");
+		return "redirect:/holdings";
+	}
+
+	/**
+	 * 2.0：有零股、多次買進或賣出紀錄的持股，第一版網頁不能修改或刪除（和 App 1.0 相同規則，C4-3、C4-4、C4-8）。
+	 * 回到清單並顯示原因，請使用者改用 2.0。
+	 */
+	@ExceptionHandler(UpgradeRequiredException.class)
+	public String handleUpgradeRequired(UpgradeRequiredException e, HttpServletRequest request) {
+		RequestContextUtils.getOutputFlashMap(request).put("errorMessage", e.getMessage());
 		return "redirect:/holdings";
 	}
 }

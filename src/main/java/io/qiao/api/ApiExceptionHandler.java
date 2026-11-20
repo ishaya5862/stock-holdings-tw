@@ -22,6 +22,8 @@ import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
+import io.qiao.exception.UpgradeRequiredException;
+import io.qiao.exception.UseApiV2Exception;
 
 /**
  * API 的統一錯誤處理：所有錯誤一律回 {"error":{"code","message"}}（App 1.0 規格）。
@@ -56,6 +58,18 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(StockNotFoundException.class)
 	public ResponseEntity<ApiErrorResponse> handleStockNotFound(StockNotFoundException e) {
 		return error(ApiErrorCode.STOCK_NOT_FOUND, e.getMessage());
+	}
+
+	/** 2.0：1.0 無法修改或刪除這筆持股 → 409，訊息請使用者更新到 App 2.0（N-a） */
+	@ExceptionHandler(UpgradeRequiredException.class)
+	public ResponseEntity<ApiErrorResponse> handleUpgradeRequired(UpgradeRequiredException e) {
+		return error(ApiErrorCode.UPGRADE_REQUIRED, e.getMessage());
+	}
+
+	/** 2.0：App 2.0 呼叫了 v1（M4） */
+	@ExceptionHandler(UseApiV2Exception.class)
+	public ResponseEntity<ApiErrorResponse> handleUseApiV2(UseApiV2Exception e) {
+		return error(ApiErrorCode.USE_API_V2, e.getMessage());
 	}
 
 	@ExceptionHandler(QuoteUnavailableException.class)

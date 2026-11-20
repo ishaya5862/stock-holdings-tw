@@ -14,6 +14,9 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
 	/** 某一筆持股的全部交易，依重算順序（交易日期 → id）排列；用得到索引 idx_trades_holding_order */
 	List<Trade> findByHoldingIdOrderByTradeDateAscIdAsc(Long holdingId);
 
+	/** 全部交易，依持股 → 交易日期 → id 排列（清單一次查出、在記憶體分組重算，不會每筆持股各查一次） */
+	List<Trade> findAllByOrderByHoldingIdAscTradeDateAscIdAsc();
+
 	/** 刪除某一筆持股的全部交易（刪持股前呼叫：外鍵不連帶刪除，由程式明確先刪交易） */
 	void deleteByHoldingId(Long holdingId);
 }

@@ -83,6 +83,24 @@ public class Trade {
 		return trade;
 	}
 
+	/**
+	 * 一筆有日期的交易（2.0 的買進、賣出；日期是使用者填的，不是推估）。
+	 * C3 的交易服務會用它；C4 的測試先用它造出「多次買進、有賣出」的資料。
+	 */
+	public static Trade create(Long holdingId, TradeSide side, LocalDate tradeDate, long shares, BigDecimal price,
+			LocalDateTime now) {
+		Trade trade = new Trade();
+		trade.holdingId = holdingId;
+		trade.side = side;
+		trade.tradeDate = tradeDate;
+		trade.dateEstimated = false;
+		trade.shares = shares;
+		trade.price = price;
+		trade.createdAt = now;
+		trade.updatedAt = now;
+		return trade;
+	}
+
 	/** 轉成計算核心用的輸入（PositionCalculator 不依賴資料庫） */
 	public TradeInput toInput() {
 		return new TradeInput(id, side, tradeDate, shares, price);

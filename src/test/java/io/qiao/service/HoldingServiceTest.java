@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.qiao.calculation.TradeSide;
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
 import io.qiao.entity.Stock;
@@ -97,9 +98,9 @@ class HoldingServiceTest {
 		Stock stock = stockRepository.findById("6488").orElseThrow();
 		assertThat(stock.getMarket()).isEqualTo(Market.TWSE);
 		assertThat(stock.getLastClosePrice()).isEqualByComparingTo("500.00");
-		Holding holding = holdingRepository.findById(saved.getId()).orElseThrow();
-		assertThat(holding.getLots()).isEqualTo(1);
-		assertThat(holding.getBuyPrice()).isEqualByComparingTo("600");
+		HoldingView holding = holdingService.findViewById(saved.getId()); // 2.0：張數、買進價改由交易紀錄算出
+		assertThat(holding.lots()).isEqualTo(1L);
+		assertThat(holding.buyPrice()).isEqualByComparingTo("600");
 	}
 
 	@Test
@@ -118,7 +119,7 @@ class HoldingServiceTest {
 
 		Holding again = holdingService.create("2330", 2, new BigDecimal("1100"));
 
-		assertThat(again.getLots()).isEqualTo(2);
+		assertThat(holdingService.findViewById(again.getId()).lots()).isEqualTo(2L);
 	}
 
 	@Test
@@ -145,8 +146,8 @@ class HoldingServiceTest {
 
 		assertThat(saved.getId()).isNotNull();
 		assertThat(saved.getCode()).isEqualTo("00632R");
-		assertThat(saved.getLots()).isEqualTo(2);
-		assertThat(saved.getBuyPrice()).isEqualByComparingTo("15.50");
+		assertThat(holdingService.findViewById(saved.getId()).lots()).isEqualTo(2L);
+		assertThat(holdingService.findViewById(saved.getId()).buyPrice()).isEqualByComparingTo("15.50");
 		assertThat(saved.getCreatedAt()).isNotNull();
 	}
 
@@ -182,8 +183,8 @@ class HoldingServiceTest {
 		Holding updated = holdingService.update(saved.getId(), 3, new BigDecimal("980.50"));
 
 		assertThat(updated.getCode()).isEqualTo("2330");
-		assertThat(updated.getLots()).isEqualTo(3);
-		assertThat(updated.getBuyPrice()).isEqualByComparingTo("980.50");
+		assertThat(holdingService.findViewById(updated.getId()).lots()).isEqualTo(3L);
+		assertThat(holdingService.findViewById(updated.getId()).buyPrice()).isEqualByComparingTo("980.50");
 	}
 
 	@Test
