@@ -1,6 +1,7 @@
 package io.qiao.api;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,15 +64,28 @@ public class ApiExceptionHandler {
 		return error(ApiErrorCode.QUOTE_UNAVAILABLE, QuoteUnavailableException.USER_MESSAGE);
 	}
 
-	/** Bean Validation 檢查失敗（缺欄位、超出範圍、超過兩位小數）：回第一個錯誤欄位的訊息 */
+	/**
+	 * Bean Validation 檢查失敗（缺欄位、超出範圍、超過兩位小數）：所有錯誤欄位的訊息合併成一句，
+	 * 用「；」隔開（例：「請輸入股票代號；張數必須是 1～999 的整數」），App 一次就看到全部要改的地方。
+	 *
+	 * 順序固定照「代號 → 張數 → 買進價」（驗證工具回報的順序不固定，固定後同樣的輸入每次訊息都一樣）；
+	 * 同一欄位有多個規則失敗（例如張數 null 同時違反好幾個）時只留一句。
+	 *
+	 * 註：型別錯誤（例如張數送 "abc"）在讀取 JSON 時就被擋下，還輪不到這裡，所以只會顯示那一則（見 handleNotReadable）。
+	 */
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ApiErrorResponse> handleValidation(MethodArgumentNotValidException e) {
-		FieldError fieldError = e.getBindingResult().getFieldError();
-		String message = fieldError != null && fieldError.getDefaultMessage() != null
-				? fieldError.getDefaultMessage()
-				: ApiFieldMessages.MALFORMED;
-		return error(ApiErrorCode.VALIDATION_ERROR, message);
+		List<FieldError> errors = e.getBindingResult().getFieldErrors();
+		String message = FIELD_ORDER.stream()
+				.flatMap(field -> errors.stream().filter(error -> error.getField().equals(field)))
+				.map(FieldError::getDefaultMessage)
+				.distinct()
+				.collect(Collectors.joining("；"));
+		return error(ApiErrorCode.VALIDATION_ERROR, message.isEmpty() ? ApiFieldMessages.MALFORMED : message);
 	}
+
+	/** 驗證錯誤訊息的優先順序（Java 欄位名稱） */
+	private static final List<String> FIELD_ORDER = List.of("code", "lots", "buyPrice");
 
 	/**
 	 * JSON 讀不進來：格式壞掉，或欄位型別不對（張數送 1.5、"1"、"abc"，買進價送字串）。
