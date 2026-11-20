@@ -60,6 +60,12 @@ abstract class AbstractStockQuoteClient implements StockQuoteClient {
 		return findLatest(code, throttle, months);
 	}
 
+	@Override
+	public Optional<StockQuote> fetchInMonth(String code, YearMonth month) {
+		// 新增持股時用（要在 10 秒內有結果）：不限制請求間隔，和 fetchLatest(code) 相同
+		return findLatest(code, RequestThrottle.NONE, List.of(month));
+	}
+
 	/**
 	 * 依序查詢指定的月份（由近到遠），第一個有資料的月份裡，取最後一個有收盤價的交易日。
 	 */

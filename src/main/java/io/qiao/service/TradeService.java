@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -24,12 +25,14 @@ import io.qiao.entity.Trade;
 import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.InvalidTradeException;
 import io.qiao.exception.NotHeldException;
+import io.qiao.exception.StockNotFoundException;
 import io.qiao.exception.TradeNotFoundException;
 import io.qiao.exception.TradeVersionConflictException;
 import io.qiao.quote.QuoteCache;
 import io.qiao.quote.QuoteStatus;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
+import io.qiao.quote.TwseQuoteClient;
 import io.qiao.repository.HoldingRepository;
 import io.qiao.repository.TradeRepository;
 import io.qiao.validation.StockCodes;
@@ -121,8 +124,7 @@ public class TradeService {
 		for (int attempt = 1; attempt <= MAX_BUY_ATTEMPTS; attempt++) {
 			if (holdingRepository.findByCode(normalizedCode).isEmpty()) {
 				if (quote == null) {
-					quote = stockLookupService.lookup(normalizedCode); // 交易外：查官方時不佔資料庫連線
-					quoteCache.putSuccess(quote, now); // 剛查到的行情放進快取，回傳結果就有未實現損益
+					quote = lookupForNewHolding(normalizedCode, tradeDate, now); // 交易外：查官方時不佔資料庫連線
 				}
 				Optional<TradeResult> created = createHoldingAndBuy(quote, tradeDate, shares, price, now, idempotency);
 				if (created.isPresent()) {
@@ -139,6 +141,31 @@ public class TradeService {
 			}
 		}
 		throw new HoldingBusyException(null);
+	}
+
+	/**
+	 * 第一次買這檔：向官方確認代號存在（第 3 題：代號不存在不儲存）。
+	 *
+	 * 1. 先查近兩個月（和 1.0 相同）：查到 → 放進行情快取，回傳結果就有未實現損益。
+	 * 2. 查不到，而且交易日期比上個月更早 → 改查「交易日期那個月」（第 6 題 L2 b：補登已下市股票的舊交易）。
+	 *    那個月有成交 → 代號確實存在過，可以記錄；但那個月的收盤價**不放進行情快取**：
+	 *    它不是現在的價格，放進去會被當成今天的收盤價算未實現損益。現在的狀態交給背景排程判斷（近期無成交資料）。
+	 * 3. 都查不到 → 404，訊息寫出查過哪個月（2010 年以前的上市股票，證交所沒有資料，訊息會說明）。
+	 * 交易日期在近兩個月內 → 步驟 1 已經查過那個月，不再多查。
+	 */
+	private StockQuote lookupForNewHolding(String code, LocalDate tradeDate, LocalDateTime now) {
+		try {
+			StockQuote quote = stockLookupService.lookup(code);
+			quoteCache.putSuccess(quote, now);
+			return quote;
+		} catch (StockNotFoundException notInRecentMonths) {
+			YearMonth tradeMonth = YearMonth.from(tradeDate);
+			if (!tradeMonth.isBefore(YearMonth.now(clock).minusMonths(1))) {
+				throw notInRecentMonths;
+			}
+			return stockLookupService.findInMonth(code, tradeMonth).orElseThrow(() -> StockNotFoundException
+					.inMonth(code, tradeMonth, tradeMonth.isBefore(TwseQuoteClient.EARLIEST_MONTH)));
+		}
 	}
 
 	/** 鎖住時持股已不存在：丟出來讓這個資料庫交易復原（連同佔住的 key），由 buy 重試 */

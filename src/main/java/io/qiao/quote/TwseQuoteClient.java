@@ -36,9 +36,17 @@ public class TwseQuoteClient extends AbstractStockQuoteClient {
 		super(restClient, objectMapper, clock);
 	}
 
+	/** 證交所個股日成交資訊最早的月份：更早的日期回「查詢日期小於99年1月4日」（2026-11-21 實測） */
+	public static final YearMonth EARLIEST_MONTH = YearMonth.of(2010, 1);
+
 	@Override
 	public Market market() {
 		return Market.TWSE;
+	}
+
+	@Override
+	public YearMonth earliestMonth() {
+		return EARLIEST_MONTH;
 	}
 
 	@Override

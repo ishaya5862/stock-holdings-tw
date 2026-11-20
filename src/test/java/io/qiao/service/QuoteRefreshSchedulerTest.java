@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -465,6 +466,11 @@ class QuoteRefreshSchedulerTest {
 		public Optional<StockQuote> fetchLastTrade(String code, RequestThrottle throttle, int lookbackMonths) {
 			lastTradeRequested.add(code);
 			return lastTrade.apply(code);
+		}
+
+		@Override
+		public Optional<StockQuote> fetchInMonth(String code, YearMonth month) {
+			return Optional.empty(); // 排程不使用（只有新增持股補登舊交易時用）
 		}
 	}
 }

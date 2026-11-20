@@ -2,7 +2,9 @@ package io.qiao.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,6 +12,8 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +29,7 @@ import io.qiao.entity.Market;
 import io.qiao.entity.Trade;
 import io.qiao.exception.InvalidTradeException;
 import io.qiao.exception.NotHeldException;
+import io.qiao.exception.StockNotFoundException;
 import io.qiao.exception.TradeNotFoundException;
 import io.qiao.exception.TradeVersionConflictException;
 import io.qiao.quote.StockLookupService;
@@ -83,6 +88,55 @@ class TradeServiceTest {
 		assertThat(result.position().shares()).isEqualTo(300);
 		assertThat(result.position().remainingCost()).isEqualByComparingTo("180256");
 		assertThat(result.position().unrealized()).as("剛查到的收盤價已放進快取").isNotNull();
+	}
+
+	// ===== 第 6 題 L2 b：補登已下市股票的舊交易（近兩個月查不到 → 查交易日期那個月） =====
+
+	@Test
+	void 已下市的股票_交易日期那個月有成交_可以記錄_那個月的價格不當成現在的收盤價() {
+		when(stockLookupService.lookup("2311")).thenThrow(new StockNotFoundException("2311"));
+		when(stockLookupService.findInMonth("2311", YearMonth.of(2017, 3))).thenReturn(Optional.of(
+				new StockQuote("2311", "日月光", Market.TWSE, new BigDecimal("38.50"), LocalDate.of(2017, 3, 31))));
+
+		TradeResult result = tradeService.buy("2311", LocalDate.of(2017, 3, 15), 1000, new BigDecimal("37.00"));
+
+		assertThat(result.holding().getCode()).isEqualTo("2311");
+		assertThat(result.position().shares()).isEqualTo(1000);
+		// 2017 年的收盤價不是現在的價格：不放進行情快取 → 不算未實現損益（之後由背景排程判斷「近期無成交」）
+		assertThat(result.position().unrealized()).isNull();
+	}
+
+	@Test
+	void 交易日期在近兩個月內_查不到就是查不到_不多查() {
+		when(stockLookupService.lookup("9999")).thenThrow(new StockNotFoundException("9999"));
+		LocalDate lastMonth = LocalDate.now(clock).minusMonths(1).withDayOfMonth(1);
+
+		assertThatThrownBy(() -> tradeService.buy("9999", lastMonth, 100, new BigDecimal("10.00")))
+				.isInstanceOf(StockNotFoundException.class)
+				.hasMessageContaining("近兩個月都沒有成交資料");
+		verify(stockLookupService, never()).findInMonth(anyString(), any());
+	}
+
+	@Test
+	void 交易日期那個月也查不到_訊息寫出查過的月份_不寫入() {
+		when(stockLookupService.lookup("9999")).thenThrow(new StockNotFoundException("9999"));
+		// findInMonth 沒設定 → Mockito 對 Optional 預設回傳空的（= 那個月也查不到）
+
+		assertThatThrownBy(() -> tradeService.buy("9999", LocalDate.of(2017, 3, 15), 100, new BigDecimal("10.00")))
+				.isInstanceOf(StockNotFoundException.class)
+				.hasMessageContaining("近兩個月與 2017 年 3 月都沒有成交資料")
+				.hasMessageContaining("只支援上市、上櫃的股票")
+				.hasMessageNotContaining("2010");
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 二零一零年以前_證交所沒有資料_訊息說明() {
+		when(stockLookupService.lookup("2311")).thenThrow(new StockNotFoundException("2311"));
+
+		assertThatThrownBy(() -> tradeService.buy("2311", LocalDate.of(2005, 3, 15), 100, new BigDecimal("10.00")))
+				.isInstanceOf(StockNotFoundException.class)
+				.hasMessageContaining("證交所只提供 2010 年起的資料");
 	}
 
 	@Test
