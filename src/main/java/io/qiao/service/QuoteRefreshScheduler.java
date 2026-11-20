@@ -1,6 +1,7 @@
 package io.qiao.service;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,10 +38,12 @@ import io.qiao.quote.TradingCalendar;
  *   已經拿到今天的收盤價、13:30 前、休市日都不查。
  * - 每一次請求之間間隔 6 秒（RequestThrottle），避免被證交所擋。
  * - 某個市場查詢失敗 → 這一輪不再查那個市場（避免被擋時還繼續猛打），另一個市場照常。
- * - 已存在的持股近兩個月都沒有成交資料時（每檔每天最多處理一次）：
+ * - 已存在的持股近兩個月都沒有成交資料時，進行「完整檢查」（每檔每天最多一次，請求較多）：
  *   1. 改查另一個市場 → 查到代表「上櫃轉上市（或反過來）」，自動更新市場別。
  *   2. 原市場往前多查幾個月 → 找到最後一次成交，寫回「上次收盤價」（長期停止交易）。
  *   3. 都沒有 → 狀態「近期無成交資料（可能停止交易或已下市）」。
+ * - 被標成「近期無成交資料」的股票，每 40 分鐘「快速重查」一次（只查原市場近兩個月，2 次請求）：
+ *   一有成交資料就恢復正常顯示，確保符合「官方公布後一小時內看得到」。
  *
  * 間隔 10 分鐘 + 每輪查詢時間，可保證官方公布後一小時內看得到當天收盤價，不用重開伺服器。
  * 測試時用 app.quote.refresh-enabled=false 關閉，避免測試連到官方。
@@ -49,6 +53,16 @@ import io.qiao.quote.TradingCalendar;
 public class QuoteRefreshScheduler {
 
 	private static final Logger log = LoggerFactory.getLogger(QuoteRefreshScheduler.class);
+
+	/**
+	 * 「近期無成交資料」的快速重查間隔。
+	 * 為什麼是 40 分鐘而不是 1 小時：最壞情況要再加上「排程間隔 10 分鐘 + 一輪的查詢時間」，
+	 * 40 + 10 + 查詢時間 ≤ 60 分鐘，才能保證題目要求的「官方公布後一小時內看得到」。
+	 */
+	static final Duration NO_TRADE_QUICK_RECHECK = Duration.ofMinutes(40);
+
+	/** 每檔股票最後一次「完整檢查」（另一個市場＋往前多查幾個月）的日期；完整檢查每天最多一次 */
+	private final Map<String, LocalDate> fullCheckDates = new ConcurrentHashMap<>();
 
 	private final Map<Market, StockQuoteClient> clients;
 	private final TradingCalendar tradingCalendar;
@@ -122,8 +136,8 @@ public class QuoteRefreshScheduler {
 			case UNAVAILABLE:
 				return true; // 上次失敗，這輪再試
 			case NO_RECENT_TRADE:
-				// 近期無成交資料：要多查另一個市場與往前幾個月（請求較多），一天重試一次就好
-				return entry.checkedAt().toLocalDate().isBefore(today);
+				// 近期無成交資料：每 40 分鐘快速重查一次（完整檢查一天一次，在 refreshKnownMarket 判斷）
+				return !now.isBefore(entry.checkedAt().plus(NO_TRADE_QUICK_RECHECK));
 			case OK:
 				if (!entry.quote().priceDate().isBefore(today)) {
 					return false; // 已經是今天的收盤價
@@ -154,6 +168,14 @@ public class QuoteRefreshScheduler {
 			}
 		} catch (QuoteUnavailableException e) {
 			markUnavailable(holding, market, now, pausedMarkets, summary, e);
+			return;
+		}
+
+		// 原市場近兩個月沒有成交資料
+		if (now.toLocalDate().equals(fullCheckDates.get(holding.getCode()))) {
+			// 今天已經做過完整檢查：這次只是快速重查，仍然沒有資料 → 維持「近期無成交資料」，更新檢查時間
+			quoteCache.putNoRecentTrade(holding.getCode(), now);
+			summary.failed++;
 			return;
 		}
 		handleNoRecentTrade(holding, market, now, throttle, pausedMarkets, summary);
@@ -205,7 +227,8 @@ public class QuoteRefreshScheduler {
 			return;
 		}
 
-		// 3. 近期無成交資料
+		// 3. 近期無成交資料；記下「今天已完整檢查過」，之後當天只做快速重查
+		fullCheckDates.put(code, now.toLocalDate());
 		quoteCache.putNoRecentTrade(code, now);
 		summary.failed++;
 	}

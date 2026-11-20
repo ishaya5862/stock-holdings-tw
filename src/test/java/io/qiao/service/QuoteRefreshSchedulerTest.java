@@ -95,12 +95,52 @@ class QuoteRefreshSchedulerTest {
 	}
 
 	@Test
-	void 近期無成交資料_同一天不重試_隔天再試() {
+	void 近期無成交資料_每40分鐘快速重查一次() {
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), okClient(Market.TWSE), okClient(Market.TPEX));
-		QuoteCache.Entry notFound = new QuoteCache.Entry(QuoteStatus.NO_RECENT_TRADE, null, at(FRIDAY, 8, 0));
+		QuoteCache.Entry noTrade = new QuoteCache.Entry(QuoteStatus.NO_RECENT_TRADE, null, at(FRIDAY, 9, 0));
 
-		assertThat(scheduler.needsRefresh(notFound, at(FRIDAY, 9, 0), RequestThrottle.NONE)).isFalse();
-		assertThat(scheduler.needsRefresh(notFound, at(FRIDAY.plusDays(1), 9, 0), RequestThrottle.NONE)).isTrue();
+		assertThat(scheduler.needsRefresh(noTrade, at(FRIDAY, 9, 39), RequestThrottle.NONE)).isFalse();
+		assertThat(scheduler.needsRefresh(noTrade, at(FRIDAY, 9, 40), RequestThrottle.NONE)).isTrue();
+	}
+
+	@Test
+	void 近期無成交資料_同一天第二次只做快速重查_不再查另一個市場和往前幾個月() {
+		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
+		CountingClient twse = new CountingClient(Market.TWSE, code -> Optional.empty());
+		CountingClient tpex = new CountingClient(Market.TPEX, code -> Optional.empty());
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, tpex);
+
+		scheduler.refresh(RequestThrottle.NONE); // 第一次：完整檢查
+		quoteCache_模擬已過40分鐘("2330");
+		scheduler.refresh(RequestThrottle.NONE); // 第二次（同一天）：快速重查
+
+		assertThat(twse.requested).hasSize(2);           // 原市場：兩次都查
+		assertThat(tpex.requested).hasSize(1);           // 另一個市場：只有第一次
+		assertThat(twse.lastTradeRequested).hasSize(1);  // 往前多查：只有第一次
+		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
+	}
+
+	@Test
+	void 近期無成交資料_快速重查時有成交了_立刻恢復正常顯示() {
+		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
+		// 第一次查沒有資料，第二次（例如官方公布了）有資料
+		List<Optional<StockQuote>> answers = new ArrayList<>(List.of(Optional.empty(),
+				Optional.of(new StockQuote("2330", "台積電", Market.TWSE, new BigDecimal("1100.00"), FRIDAY))));
+		CountingClient twse = new CountingClient(Market.TWSE, code -> answers.remove(0));
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse,
+				new CountingClient(Market.TPEX, code -> Optional.empty()));
+
+		scheduler.refresh(RequestThrottle.NONE);
+		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
+
+		quoteCache_模擬已過40分鐘("2330");
+		scheduler.refresh(RequestThrottle.NONE);
+		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.OK);
+	}
+
+	/** 把快取裡的檢查時間往前調 40 分鐘，模擬時間經過（排程用的是固定時間的 Clock） */
+	private void quoteCache_模擬已過40分鐘(String code) {
+		cache.putNoRecentTrade(code, at(FRIDAY, 9, 0).minusMinutes(40));
 	}
 
 	@Test
