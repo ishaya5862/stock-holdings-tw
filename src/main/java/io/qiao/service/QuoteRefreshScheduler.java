@@ -183,6 +183,12 @@ public class QuoteRefreshScheduler {
 	/** 已知市場：先查原本的市場；近兩個月都沒有成交資料時，交給 handleNoRecentTrade 進一步判斷 */
 	private void refreshKnownMarket(String code, Market market, LocalDateTime now, RequestThrottle throttle, Round round) {
 		if (round.paused.contains(market)) {
+			// 這次啟動後還沒查過的股票（快取沒有紀錄）若直接跳過，會一直顯示「更新中…」；
+			// 官方連不上時題目要求顯示「未取得」（第 3 題要求 5）→ 標記未取得。
+			// 已有紀錄的維持原狀：不蓋掉之前查到的收盤價（和 handleNoRecentTrade 遇到市場暫停的處理一致）
+			if (quoteCache.get(code).isEmpty()) {
+				quoteCache.putUnavailable(code, now);
+			}
 			round.summary.paused++;
 			return;
 		}
