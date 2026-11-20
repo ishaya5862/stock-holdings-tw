@@ -31,6 +31,10 @@
 	check('手續費 有分 3,346.65 → 20', V2Form.feeYuan(334665n), 20n);
 	check('證交稅 2330 130,000 → 390', V2Form.taxYuan('2330', 13000000n), 390n);
 	check('證交稅 0050 168,900 → 168', V2Form.taxYuan('0050', 16890000n), 168n);
+	// 單筆成交金額上限 100 億元（朋友回饋 3，和後端相同）
+	check('剛好 100 億可以', V2Form.amountError(10000000n, 100000n), null);
+	check('超過 100 億擋下', V2Form.amountError(10000001n, 100000n), '單筆成交金額（股數 × 價格）最多 100 億元，請確認股數與價格是否多打了 0');
+	check('兩個上限相乘也擋下', V2Form.amountError(99999999n, 9999999999n) !== null, true);
 	check('最大金額不失真', V2Form.formatCents(99999999n * 9999999999n), '9,999,999,899,000,000.01');
 	check('負數格式', V2Form.formatCents(-123456n), '−1,234.56');
 	check('API 金額字串轉分 368022.75', V2Form.plainToCents('368022.75'), 36802275n);

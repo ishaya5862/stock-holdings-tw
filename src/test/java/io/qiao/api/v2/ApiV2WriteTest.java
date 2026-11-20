@@ -155,6 +155,12 @@ class ApiV2WriteTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error.fields.shares").value("單筆最多 99,999,999 股；數量更大請分成多筆記錄"));
 
+		// 朋友回饋 3：股數、價格各自合格，但相乘超過 100 億 → 400，標在 shares
+		postTrade("2330", trade("BUY", "2026-03-02", "99999999", "\"99999999.99\""))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.error.fields.shares").value(Matchers.startsWith("單筆成交金額（股數 × 價格）最多 100 億元")));
+
 		LocalDate tomorrow = LocalDate.now(clock).plusDays(1);
 		postTrade("2330", trade("BUY", tomorrow.toString(), "100", "\"600\""))
 				.andExpect(status().isBadRequest())
