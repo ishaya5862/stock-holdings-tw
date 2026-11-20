@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -24,6 +23,7 @@ import io.qiao.quote.QuoteCache;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
+import io.qiao.validation.StockCodes;
 
 /**
  * 持股的新增、修改、刪除、查詢。
@@ -79,6 +79,18 @@ public class HoldingService {
 	@Transactional(readOnly = true)
 	public HoldingListView findListWithSummary() {
 		return HoldingListView.of(findAllViews());
+	}
+
+	/**
+	 * 單一持股（含股票資訊、行情、盈虧）：App 的修改畫面用（GET /api/v1/holdings/{id}）。
+	 *
+	 * @throws HoldingNotFoundException 找不到這筆持股
+	 */
+	@Transactional(readOnly = true)
+	public HoldingView findViewById(Long id) {
+		Holding holding = findById(id);
+		Stock stock = stockService.findByCodes(List.of(holding.getCode())).get(holding.getCode());
+		return HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), profitCalculator);
 	}
 
 	@Transactional(readOnly = true)
@@ -164,10 +176,10 @@ public class HoldingService {
 	}
 
 	/**
-	 * 統一代號格式：去掉前後空白、英文轉大寫（例如「 00632r 」→「00632R」），
-	 * 避免同一檔股票因為大小寫或空白不同而被存成兩筆。
+	 * 統一代號格式（規則在 StockCodes.normalize：去空白、全形轉半形、轉大寫，例如「００６３２ｒ」→「00632R」），
+	 * 避免同一檔股票因為大小寫、全形或空白不同而被存成兩筆。網頁和 App API 都經過這裡。
 	 */
 	private String normalizeCode(String code) {
-		return code.trim().toUpperCase(Locale.ROOT);
+		return StockCodes.normalize(code);
 	}
 }

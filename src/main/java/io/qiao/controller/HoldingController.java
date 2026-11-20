@@ -10,8 +10,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import io.qiao.calculation.ProfitCalculator;
 import io.qiao.dto.HoldingForm;
 import io.qiao.dto.HoldingListView;
+import io.qiao.dto.HoldingView;
 import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.QuoteUnavailableException;
@@ -40,13 +42,18 @@ public class HoldingController {
 	}
 
 	/**
-	 * 這個 Controller 的每個畫面都會帶上股票代號規則，給表單頁的前端即時檢查使用。
-	 * （@ModelAttribute 方法：每次處理請求前都會執行，驗證失敗重新顯示表單時也會有）
+	 * 這個 Controller 的每個畫面都會帶上前端需要的規則（@ModelAttribute 方法：每次處理請求前都會執行，
+	 * 驗證失敗重新顯示表單時也會有）：
+	 * - 股票代號規則：表單頁的前端即時檢查
+	 * - 手續費率、最低手續費：表單頁的「預估買進成本」即時試算（取自 ProfitCalculator，前端不自己寫死）
 	 */
 	@ModelAttribute
-	public void addStockCodeRule(Model model) {
+	public void addFrontendRules(Model model) {
 		model.addAttribute("codePattern", StockCodes.PATTERN);
 		model.addAttribute("codeMessage", StockCodes.MESSAGE);
+		// toPlainString：避免 BigDecimal 輸出成科學記號（例如 1.425E-3），前端才能正確解析
+		model.addAttribute("feeRate", ProfitCalculator.FEE_RATE.toPlainString());
+		model.addAttribute("minFee", ProfitCalculator.MIN_FEE.toPlainString());
 	}
 
 	/** 清單（收盤價只讀記憶體快取，不會每次打開就查官方） */
@@ -94,27 +101,34 @@ public class HoldingController {
 	/** 修改：顯示表單（帶入目前的值） */
 	@GetMapping("/{id}/edit")
 	public String editForm(@PathVariable Long id, Model model) {
-		Holding holding = holdingService.findById(id);
+		HoldingView holding = holdingService.findViewById(id);
 
 		HoldingForm form = new HoldingForm();
-		form.setCode(holding.getCode());
-		form.setLots(holding.getLots());
-		form.setBuyPrice(holding.getBuyPrice());
+		form.setLots(holding.lots());
+		form.setBuyPrice(holding.buyPrice());
 
 		model.addAttribute("holdingForm", form);
-		model.addAttribute("holdingId", id);
+		addEditPageInfo(model, id, holding);
 		return FORM_VIEW;
+	}
+
+	/**
+	 * 修改頁需要的資料：持股 id（表單送出網址）＋股票資訊（畫面上方顯示「代號、名稱、市場」）。
+	 * 代號不放在表單欄位裡（避免被誤會可以修改），只顯示；送出時也不送代號，後端本來就以資料庫為準。
+	 */
+	private void addEditPageInfo(Model model, Long id, HoldingView holding) {
+		model.addAttribute("holdingId", id);
+		model.addAttribute("stockInfo", holding);
 	}
 
 	/** 修改：送出（代號不能改，只更新張數和買進價） */
 	@PostMapping("/{id}")
 	public String update(@PathVariable Long id, @Valid @ModelAttribute("holdingForm") HoldingForm form,
 			BindingResult bindingResult, Model model, RedirectAttributes redirectAttributes) {
-		// 只看張數、買進價的錯誤：代號不能改，送上來的代號不採用，所以代號欄位的錯誤不影響修改
+		// 只看張數、買進價的錯誤：修改頁不送代號（就算有人自己加上也不採用），代號欄位的錯誤不影響修改
 		if (bindingResult.hasFieldErrors("lots") || bindingResult.hasFieldErrors("buyPrice")) {
-			// 代號以資料庫為準，避免畫面顯示被竄改過的代號
-			form.setCode(holdingService.findById(id).getCode());
-			model.addAttribute("holdingId", id);
+			// 股票資訊從資料庫重新讀，畫面上方的代號、名稱一定是正確的
+			addEditPageInfo(model, id, holdingService.findViewById(id));
 			return FORM_VIEW;
 		}
 

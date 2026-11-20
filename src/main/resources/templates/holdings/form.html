@@ -14,14 +14,23 @@
 			</a>
 
 			<div class="card app-card mt-2">
-				<div class="card-body p-4">
+				<!--/* position-relative：讓「送出中」遮罩可以蓋住整個卡片內容 */-->
+				<div class="card-body p-4 position-relative">
 					<h2 class="h4 fw-bold mb-4" th:text="${isEdit} ? '修改持股' : '新增持股'">新增持股</h2>
 
-					<!--
+					<!--/* 送出中遮罩：按下送出後由 js/holding-form.js 顯示，蓋住填寫區避免被更改、重複送出 */-->
+					<div id="submit-overlay" class="submit-overlay d-none" role="status" aria-live="polite">
+						<div class="spinner-border text-primary mb-2"></div>
+						<div class="fw-semibold">送出中，請稍候…</div>
+						<div class="small text-muted" th:unless="${isEdit}">正在向證交所、櫃買中心確認代號（最多約 10 秒）</div>
+					</div>
+
+					<!--/*
 						novalidate：關閉瀏覽器內建的檢查，統一由伺服器驗證並顯示中文錯誤訊息
 						（瀏覽器內建訊息各家不同，也可能被繞過，伺服器驗證才是真正的把關）。
-					-->
-					<form method="post" novalidate th:object="${holdingForm}"
+						data-holding-form：給 js/holding-form.js 找到這個表單。
+					*/-->
+					<form method="post" novalidate data-holding-form th:object="${holdingForm}"
 						th:action="${isEdit} ? @{/holdings/{id}(id=${holdingId})} : @{/holdings}">
 
 						<!-- 不屬於某個欄位的錯誤（例如官方行情連不上） -->
@@ -30,22 +39,39 @@
 							<span th:each="err : ${#fields.globalErrors()}" th:text="${err}">行情來源暫時無法連線，請稍後再試</span>
 						</div>
 
-						<div class="mb-3">
+						<!--/*
+							修改頁：代號不放輸入框（避免被誤會可以修改），改成上方的「股票資訊」區塊，顯示代號、名稱、市場。
+							代號不會送出；後端修改時本來就以資料庫的代號為準。
+							名稱、市場：第 2 題時期的舊資料可能還沒補上，照清單頁的做法顯示「—」。
+						*/-->
+						<div th:if="${isEdit}" class="info-box mb-4" id="stock-info">
+							<div class="small text-muted mb-1">股票代號</div>
+							<div class="d-flex align-items-center flex-wrap gap-2">
+								<span class="fs-4 fw-bold app-number" th:text="${stockInfo.code}">2330</span>
+								<span class="fs-5" th:text="${stockInfo.name} ?: '—'">台積電</span>
+								<span th:if="${stockInfo.market}" class="badge text-bg-secondary" th:text="${stockInfo.market.label}">上市</span>
+							</div>
+							<div class="small text-muted mt-2">
+								<i class="bi bi-lock me-1"></i>代號不能修改；要換股票請刪除後重新新增。
+							</div>
+						</div>
+
+						<div class="mb-3" th:unless="${isEdit}">
 							<label for="code" class="form-label">股票代號</label>
 							<!--/*
-								修改時代號不能改：readonly（仍會送出，但伺服器不採用）。
+								只有新增頁有代號輸入框（修改頁改成上方的股票資訊區塊）。
 								data-pattern / data-message 取自後端 StockCodes（由 HoldingController 放進 model），前端即時檢查和後端驗證用同一份規則。
 								不用 ${T(...)} 直接讀 Java 類別：Thymeleaf 3.1 為了安全禁止在模板裡存取靜態類別。
 								code-feedback 一定存在（沒有錯誤時是空的），讓前端 JavaScript 可以即時填入錯誤訊息。
+								maxlength 設 20 而不是 7：全形或含空白的輸入（例「　００６７９Ｂ　」）在轉成半形前會比較長，太短會被截斷。
 							*/-->
 							<input type="text" class="form-control app-number" id="code" th:field="*{code}"
-								th:readonly="${isEdit}" th:classappend="${#fields.hasErrors('code')} ? 'is-invalid'"
+								th:classappend="${#fields.hasErrors('code')} ? 'is-invalid'"
 								th:attr="data-pattern=${codePattern},data-message=${codeMessage}"
-								placeholder="例：2330、0050、00679B" autocomplete="off" maxlength="7" autocapitalize="characters">
+								placeholder="例：2330、0050、00679B" autocomplete="off" maxlength="20" autocapitalize="characters">
 							<div id="code-feedback" class="invalid-feedback"
 								th:text="${#fields.hasErrors('code')} ? ${#strings.listJoin(#fields.errors('code'), '；')} : ''">錯誤訊息</div>
-							<div class="form-text" th:unless="${isEdit}">4～6 位數字，最後可加 1 個英文字母（例：00679B）。</div>
-							<div class="form-text" th:if="${isEdit}">代號不能修改；要換股票請刪除後重新新增。</div>
+							<div class="form-text">4～6 位數字，最後可加 1 個英文字母（例：00679B）；全形會自動轉半形、空白會自動去除。</div>
 						</div>
 
 						<div class="mb-3">
@@ -66,12 +92,32 @@
 							</div>
 						</div>
 
+						<!--/*
+							預估買進成本（只在前端顯示，不送出、不存檔）：由 js/holding-form.js 依張數、買進價即時試算。
+							手續費率、最低手續費取自後端 ProfitCalculator（HoldingController 放進 model），規則只有一份。
+							用 HTML 內建的 <details>／<summary> 做摺疊：點開、收合、箭頭、鍵盤操作都由瀏覽器處理，不必自己寫點擊程式。
+							- 收合時：summary 顯示「預估買進成本 1,234,757 元（看明細）」
+							- 點開後：summary 只留標題（CSS 隱藏金額），下方顯示明細與手續費規則
+							aria-live：數字變動時，螢幕閱讀器會唸出新的結果。
+						*/-->
+						<details class="cost-preview mb-4" id="cost-preview"
+							th:attr="data-fee-rate=${feeRate},data-min-fee=${minFee}">
+							<summary>
+								<span class="fw-semibold">預估買進成本</span><span id="cost-preview-summary"
+									class="cost-preview-summary app-number" aria-live="polite">：填寫張數與買進價後自動計算</span>
+							</summary>
+							<div class="cost-preview-body">
+								<div id="cost-preview-result" class="app-number"></div>
+								<div class="small text-muted">手續費 0.1425%、無條件捨去、最低 20 元；實際以存檔後清單顯示為準</div>
+							</div>
+						</details>
+
 						<p class="form-text" th:unless="${isEdit}">
 							新增時會向證交所、櫃買中心確認代號並自動判斷上市／上櫃，最多約 10 秒。
 						</p>
 
 						<div class="d-flex gap-2">
-							<!--/* 送出後按鈕變成「查詢中…」並停用（寫在 js/holding-form.js：代號格式檢查通過才停用） */-->
+							<!--/* 送出後按鈕變成「送出中…」並停用（寫在 js/holding-form.js：代號格式檢查通過才停用） */-->
 							<button type="submit" class="btn btn-primary">
 								<i class="bi bi-check-lg me-1"></i><span th:text="${isEdit} ? '儲存修改' : '新增'">新增</span>
 							</button>

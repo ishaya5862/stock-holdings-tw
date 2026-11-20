@@ -118,6 +118,18 @@ class ProfitCalculatorTest {
 		assertThat(calculator.totalCostByLots(1, new BigDecimal("10.00"))).isEqualByComparingTo("10020");
 	}
 
+	/**
+	 * 與前端「預估買進成本」（js/holding-form.js）用同一組資料對照：前端用 BigInt、後端用 BigDecimal，結果必須一樣。
+	 * 前端的對照是用 Edge 無畫面模式實際執行 JavaScript 驗證（本機沒有 Node.js，無法放進自動化測試）。
+	 */
+	@Test
+	void 總成本_與前端預估買進成本相同的對照資料_含最大值() {
+		assertThat(calculator.totalCostByLots(3, new BigDecimal("28.55"))).isEqualByComparingTo("85772");      // 85,650 + 122
+		assertThat(calculator.totalCostByLots(1, new BigDecimal("0.01"))).isEqualByComparingTo("30");          // 10 + 最低 20
+		// 999 張 × 價格上限：99,899,999,990,010 + 142,357,499,985
+		assertThat(calculator.totalCostByLots(999, new BigDecimal("99999999.99"))).isEqualByComparingTo("100042357489995");
+	}
+
 	@Test
 	void 總成本和完整計算的總成本一致() {
 		ProfitResult result = calculator.calculateByLots("0050", 2, new BigDecimal("150.00"), new BigDecimal("145.50"));

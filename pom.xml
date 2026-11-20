@@ -13,7 +13,7 @@
 
 	<groupId>io.qiao</groupId>
 	<artifactId>stock-holdings-tw</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.1.0</version>
 	<name>stock-holdings-tw</name>
 	<description>Stock Holdings Ledger</description>
 
@@ -69,7 +69,7 @@
 		<!--
 			Docker Compose 整合：執行 mvnw spring-boot:run 時，會自動依 docker-compose.yml 啟動 MySQL，
 			並等資料庫準備好才啟動程式 → 達成題目「一行指令啟動」。
-			打包成 jar 或跑測試時不會啟用。
+			跑測試時不會啟用；打包成 jar 也會包進去（見下方 spring-boot-maven-plugin 的 excludeDockerCompose）。
 		-->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -107,6 +107,16 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!--
+						打包 jar 時也放進 Docker Compose 整合（預設會排除）：
+						下載 jar 的人把 jar 和 docker-compose.yml 放在同一個資料夾，java -jar 就會自動啟動 MySQL，
+						不用自己查 Docker 隨機挑的埠號（與 mvnw spring-boot:run 的體驗一致）。
+						注意：執行的資料夾找不到 docker-compose.yml 時會啟動失敗（No Docker Compose file found）；
+						要改連自己的 MySQL，需設定 SPRING_DOCKER_COMPOSE_ENABLED=false，再用 DB_HOST / DB_PORT 指定（已實測）。
+					-->
+					<excludeDockerCompose>false</excludeDockerCompose>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

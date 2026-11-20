@@ -106,7 +106,7 @@
 								UPDATING    → 更新中…（這次啟動後還沒輪到查詢）
 								UNAVAILABLE → 未取得（官方連不上）
 								NO_RECENT_TRADE → 近期無成交資料（可能停止交易或已下市）＋ 最後收盤價（含年份，可能是好幾個月前）
-								更新中、未取得時，資料庫有上次收盤價就用小字顯示「上次收盤價 X（日期）」
+								更新中、未取得時，資料庫（stocks 表）有上次收盤價就用小字顯示「上次收盤價 X（日期）」
 							*/-->
 							<td class="text-end app-number text-nowrap" th:switch="${h.quoteStatus.name()}">
 								<th:block th:case="'OK'">
@@ -156,10 +156,12 @@
 								<a class="btn btn-sm btn-outline-secondary" th:href="@{/holdings/{id}/edit(id=${h.id})}">
 									<i class="bi bi-pencil"></i> 修改
 								</a>
-								<!-- 刪除用 POST 表單（不用 GET 連結，避免被瀏覽器預先載入或爬蟲誤刪），送出前先確認 -->
+								<!--/*
+									刪除用 POST 表單（不用 GET 連結，避免被瀏覽器預先載入或爬蟲誤刪）。
+									確認視窗與防止重複送出寫在 js/holding-list.js（data-delete-form）。
+								*/-->
 								<form class="d-inline" method="post" th:action="@{/holdings/{id}/delete(id=${h.id})}"
-									th:data-code="${h.code}"
-									onsubmit="return confirm('確定要刪除 ' + this.dataset.code + ' 嗎？');">
+									data-delete-form th:data-code="${h.code}">
 									<button type="submit" class="btn btn-sm btn-outline-danger">
 										<i class="bi bi-trash"></i> 刪除
 									</button>
@@ -173,5 +175,6 @@
 	</main>
 
 	<th:block th:replace="~{fragments/layout :: scripts}"></th:block>
+	<script th:src="@{/js/holding-list.js}"></script>
 </body>
 </html>
