@@ -9,7 +9,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -24,8 +23,8 @@ import java.util.function.Function;
 
 import org.junit.jupiter.api.Test;
 
-import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
+import io.qiao.entity.Stock;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.quote.QuoteCache;
 import io.qiao.quote.QuoteProperties;
@@ -36,8 +35,8 @@ import io.qiao.quote.StockQuoteClient;
 import io.qiao.quote.TradingCalendar;
 
 /**
- * 背景排程的規則測試：什麼時候要查、查失敗怎麼辦、舊資料補名稱。
- * 用假的查詢來源與固定時間的 Clock，不連網、不啟動 Spring。
+ * 背景排程的規則測試：什麼時候要查、查失敗怎麼辦、怎麼避免卡住或查到半夜。
+ * 用假的查詢來源與固定時間的 Clock，不連網、不啟動 Spring；寫入股票表的 StockService 換成 mock（假物件），只檢查有沒有被呼叫。
  */
 class QuoteRefreshSchedulerTest {
 
@@ -46,8 +45,10 @@ class QuoteRefreshSchedulerTest {
 	private static final LocalDate THURSDAY = LocalDate.of(2026, 11, 19);
 
 	private final TradingCalendar calendar = mock(TradingCalendar.class);
-	private final HoldingService holdingService = mock(HoldingService.class);
+	private final StockService stockService = mock(StockService.class);
 	private final QuoteCache cache = new QuoteCache();
+
+	// ===== 什麼時候要查（needsRefresh） =====
 
 	@Test
 	void 還沒查過_一定要查() {
@@ -60,30 +61,30 @@ class QuoteRefreshSchedulerTest {
 	void 收盤前_已有昨天的收盤價_不查() {
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 13, 29), okClient(Market.TWSE), okClient(Market.TPEX));
 
-		assertThat(scheduler.needsRefresh(okEntry(THURSDAY), at(FRIDAY, 13, 29), RequestThrottle.NONE)).isFalse();
+		assertThat(scheduler.needsRefresh(okEntry("2330", THURSDAY), at(FRIDAY, 13, 29), RequestThrottle.NONE)).isFalse();
 	}
 
 	@Test
 	void 開盤日收盤後_還沒有今天的收盤價_要查() {
-		when(calendar.isTradingDay(eq(FRIDAY), any())).thenReturn(true);
+		tradingDay(true);
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 13, 31), okClient(Market.TWSE), okClient(Market.TPEX));
 
-		assertThat(scheduler.needsRefresh(okEntry(THURSDAY), at(FRIDAY, 13, 31), RequestThrottle.NONE)).isTrue();
+		assertThat(scheduler.needsRefresh(okEntry("2330", THURSDAY), at(FRIDAY, 13, 31), RequestThrottle.NONE)).isTrue();
 	}
 
 	@Test
 	void 已經有今天的收盤價_不查() {
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 15, 0), okClient(Market.TWSE), okClient(Market.TPEX));
 
-		assertThat(scheduler.needsRefresh(okEntry(FRIDAY), at(FRIDAY, 15, 0), RequestThrottle.NONE)).isFalse();
+		assertThat(scheduler.needsRefresh(okEntry("2330", FRIDAY), at(FRIDAY, 15, 0), RequestThrottle.NONE)).isFalse();
 	}
 
 	@Test
 	void 休市日收盤後_不查() {
-		when(calendar.isTradingDay(eq(FRIDAY), any())).thenReturn(false);
+		tradingDay(false);
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 15, 0), okClient(Market.TWSE), okClient(Market.TPEX));
 
-		assertThat(scheduler.needsRefresh(okEntry(THURSDAY), at(FRIDAY, 15, 0), RequestThrottle.NONE)).isFalse();
+		assertThat(scheduler.needsRefresh(okEntry("2330", THURSDAY), at(FRIDAY, 15, 0), RequestThrottle.NONE)).isFalse();
 	}
 
 	@Test
@@ -94,72 +95,89 @@ class QuoteRefreshSchedulerTest {
 		assertThat(scheduler.needsRefresh(failed, at(FRIDAY, 9, 0), RequestThrottle.NONE)).isTrue();
 	}
 
+	// ===== ② 近期無成交資料：快速重查只在開盤日收盤後 =====
+
 	@Test
-	void 近期無成交資料_每40分鐘快速重查一次() {
+	void 近期無成交_開盤日收盤後每40分鐘快速重查() {
+		tradingDay(true);
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 14, 0), okClient(Market.TWSE), okClient(Market.TPEX));
+		QuoteCache.Entry noTrade = new QuoteCache.Entry(QuoteStatus.NO_RECENT_TRADE, null, at(FRIDAY, 14, 0));
+
+		assertThat(scheduler.needsRefresh(noTrade, at(FRIDAY, 14, 39), RequestThrottle.NONE)).isFalse();
+		assertThat(scheduler.needsRefresh(noTrade, at(FRIDAY, 14, 40), RequestThrottle.NONE)).isTrue();
+	}
+
+	@Test
+	void 近期無成交_收盤前或休市日_不做快速重查_避免半夜週末一直查() {
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), okClient(Market.TWSE), okClient(Market.TPEX));
-		QuoteCache.Entry noTrade = new QuoteCache.Entry(QuoteStatus.NO_RECENT_TRADE, null, at(FRIDAY, 9, 0));
+		QuoteCache.Entry checkedAtNight = new QuoteCache.Entry(QuoteStatus.NO_RECENT_TRADE, null, at(FRIDAY, 0, 30));
 
-		assertThat(scheduler.needsRefresh(noTrade, at(FRIDAY, 9, 39), RequestThrottle.NONE)).isFalse();
-		assertThat(scheduler.needsRefresh(noTrade, at(FRIDAY, 9, 40), RequestThrottle.NONE)).isTrue();
+		// 收盤前（早上 9 點，距上次檢查已超過 40 分鐘）→ 不查
+		assertThat(scheduler.needsRefresh(checkedAtNight, at(FRIDAY, 9, 0), RequestThrottle.NONE)).isFalse();
+		// 收盤後但休市日 → 不查
+		tradingDay(false);
+		assertThat(scheduler.needsRefresh(checkedAtNight, at(FRIDAY, 15, 0), RequestThrottle.NONE)).isFalse();
 	}
 
 	@Test
-	void 近期無成交資料_同一天第二次只做快速重查_不再查另一個市場和往前幾個月() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
-		CountingClient twse = new CountingClient(Market.TWSE, code -> Optional.empty());
-		CountingClient tpex = new CountingClient(Market.TPEX, code -> Optional.empty());
-		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, tpex);
+	void 近期無成交_隔天一定做一次完整檢查() {
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), okClient(Market.TWSE), okClient(Market.TPEX));
+		QuoteCache.Entry yesterday = new QuoteCache.Entry(QuoteStatus.NO_RECENT_TRADE, null, at(THURSDAY, 20, 0));
 
-		scheduler.refresh(RequestThrottle.NONE); // 第一次：完整檢查
-		quoteCache_模擬已過40分鐘("2330");
-		scheduler.refresh(RequestThrottle.NONE); // 第二次（同一天）：快速重查
-
-		assertThat(twse.requested).hasSize(2);           // 原市場：兩次都查
-		assertThat(tpex.requested).hasSize(1);           // 另一個市場：只有第一次
-		assertThat(twse.lastTradeRequested).hasSize(1);  // 往前多查：只有第一次
-		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
+		assertThat(scheduler.needsRefresh(yesterday, at(FRIDAY, 0, 10), RequestThrottle.NONE)).isTrue();
 	}
 
+	// ===== 一輪更新：查到的寫進快取與股票表（C：只寫 stocks，不碰持股） =====
+
 	@Test
-	void 近期無成交資料_快速重查時有成交了_立刻恢復正常顯示() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
-		// 第一次查沒有資料，第二次（例如官方公布了）有資料
-		List<Optional<StockQuote>> answers = new ArrayList<>(List.of(Optional.empty(),
-				Optional.of(new StockQuote("2330", "台積電", Market.TWSE, new BigDecimal("1100.00"), FRIDAY))));
-		CountingClient twse = new CountingClient(Market.TWSE, code -> answers.remove(0));
-		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse,
-				new CountingClient(Market.TPEX, code -> Optional.empty()));
+	void 一輪更新_查到的放進快取並寫回股票表() {
+		held(stock("2330", Market.TWSE));
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), okClient(Market.TWSE), okClient(Market.TPEX));
 
 		scheduler.refresh(RequestThrottle.NONE);
-		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
 
-		quoteCache_模擬已過40分鐘("2330");
-		scheduler.refresh(RequestThrottle.NONE);
 		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.OK);
+		verify(stockService).recordQuote(argThat(quote -> quote.code().equals("2330")));
 	}
 
-	/** 把快取裡的檢查時間往前調 40 分鐘，模擬時間經過（排程用的是固定時間的 Clock） */
-	private void quoteCache_模擬已過40分鐘(String code) {
-		cache.putNoRecentTrade(code, at(FRIDAY, 9, 0).minusMinutes(40));
+	// ===== ① 避免卡住：一直失敗的股票擋不到其他股票 =====
+
+	@Test
+	void 某一檔一直失敗_同市場其他股票照常更新() {
+		// 1101 每次都失敗（例如考官的測試伺服器只讓它回錯誤），排序在最前面
+		held(stock("1101", Market.TWSE), stock("2330", Market.TWSE), stock("2454", Market.TWSE));
+		CountingClient twse = new CountingClient(Market.TWSE, code -> {
+			if (code.equals("1101")) {
+				throw new QuoteUnavailableException("只有 1101 有問題");
+			}
+			return Optional.of(quote(code, Market.TWSE, THURSDAY));
+		});
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, okClient(Market.TPEX));
+
+		scheduler.refresh(RequestThrottle.NONE); // 第 1 輪
+		scheduler.refresh(RequestThrottle.NONE); // 第 2 輪：1101 仍失敗
+
+		assertThat(cache.get("1101").get().status()).isEqualTo(QuoteStatus.UNAVAILABLE);
+		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.OK);
+		assertThat(cache.get("2454").get().status()).isEqualTo(QuoteStatus.OK);
 	}
 
 	@Test
-	void 一輪更新_查到的放進快取並寫回資料庫() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
-		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), okClient(Market.TWSE), okClient(Market.TPEX));
+	void 上次失敗的股票排到最後才查() {
+		held(stock("1101", Market.TWSE), stock("2330", Market.TWSE));
+		cache.putUnavailable("1101", at(FRIDAY, 8, 50));
+		CountingClient twse = okClient(Market.TWSE);
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, okClient(Market.TPEX));
 
 		scheduler.refresh(RequestThrottle.NONE);
 
-		assertThat(cache.get("2330")).get().extracting(QuoteCache.Entry::status).isEqualTo(QuoteStatus.OK);
-		verify(holdingService).recordQuote(eq(1L), any(StockQuote.class));
+		assertThat(twse.requested).containsExactly("2330", "1101");
 	}
 
 	@Test
-	void 某個市場查詢失敗_本輪暫停那個市場_另一個市場照常() {
-		when(holdingService.findAll()).thenReturn(List.of(
-				holding(1L, "2330", Market.TWSE),
-				holding(2L, "2454", Market.TWSE),
-				holding(3L, "6488", Market.TPEX)));
+	void 同一市場連續兩檔失敗_才暫停這個市場_另一個市場照常() {
+		held(stock("2330", Market.TWSE), stock("2454", Market.TWSE), stock("2886", Market.TWSE),
+				stock("6488", Market.TPEX));
 		CountingClient twse = new CountingClient(Market.TWSE, code -> {
 			throw new QuoteUnavailableException("被擋");
 		});
@@ -168,18 +186,49 @@ class QuoteRefreshSchedulerTest {
 
 		QuoteRefreshScheduler.Summary summary = scheduler.refresh(RequestThrottle.NONE);
 
-		// 證交所第一檔失敗後就不再查 2454；櫃買中心的 6488 照常更新
-		assertThat(twse.requested).containsExactly("2330");
-		assertThat(tpex.requested).containsExactly("6488");
+		// 2330、2454 連續失敗 → 暫停上市，2886 不再查；上櫃的 6488 照常
+		assertThat(twse.requested).containsExactly("2330", "2454");
 		assertThat(summary.paused()).isEqualTo(1);
-		assertThat(cache.get("2330")).get().extracting(QuoteCache.Entry::status).isEqualTo(QuoteStatus.UNAVAILABLE);
-		assertThat(cache.get("2454")).isEmpty(); // 沒查到 → 維持「更新中」
-		assertThat(cache.get("6488")).get().extracting(QuoteCache.Entry::status).isEqualTo(QuoteStatus.OK);
+		assertThat(cache.get("2886")).isEmpty();
+		assertThat(tpex.requested).containsExactly("6488");
+		assertThat(cache.get("6488").get().status()).isEqualTo(QuoteStatus.OK);
+	}
+
+	// ===== ③ 避免查到半夜：16:00 之後連續 3 次拿到舊日期，今天就不再等 =====
+
+	@Test
+	void 十六點後連續3次都不是今天的收盤價_今天不再查() {
+		tradingDay(true);
+		held(stock("2330", Market.TWSE));
+		CountingClient twse = okClient(Market.TWSE); // 一直回傳 11/19（例如今天臨時休市）
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 16, 30), twse, okClient(Market.TPEX));
+
+		for (int i = 0; i < 5; i++) {
+			scheduler.refresh(RequestThrottle.NONE);
+		}
+
+		assertThat(twse.requested).hasSize(3); // 第 4、5 輪不再查
 	}
 
 	@Test
+	void 十六點前拿到舊日期不算_官方可能還沒公布_照常每輪查() {
+		tradingDay(true);
+		held(stock("2330", Market.TWSE));
+		CountingClient twse = okClient(Market.TWSE);
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 14, 30), twse, okClient(Market.TPEX));
+
+		for (int i = 0; i < 5; i++) {
+			scheduler.refresh(RequestThrottle.NONE);
+		}
+
+		assertThat(twse.requested).hasSize(5);
+	}
+
+	// ===== 市場未知的舊資料 =====
+
+	@Test
 	void 舊資料沒有市場_先查上市再查上櫃_查到就補上() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "6488", null)));
+		held(stock("6488", null));
 		CountingClient twse = new CountingClient(Market.TWSE, code -> Optional.empty());
 		CountingClient tpex = okClient(Market.TPEX);
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, tpex);
@@ -189,63 +238,57 @@ class QuoteRefreshSchedulerTest {
 		assertThat(twse.requested).containsExactly("6488");
 		assertThat(tpex.requested).containsExactly("6488");
 		assertThat(cache.get("6488").get().quote().market()).isEqualTo(Market.TPEX);
-		verify(holdingService).recordQuote(eq(1L), any(StockQuote.class));
+		verify(stockService).recordQuote(argThat(quote -> quote.market() == Market.TPEX));
 	}
 
 	@Test
 	void 舊資料兩邊都確定近期無成交_標記近期無成交資料() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "9999", null)));
+		held(stock("9999", null));
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0),
 				new CountingClient(Market.TWSE, code -> Optional.empty()),
 				new CountingClient(Market.TPEX, code -> Optional.empty()));
 
 		scheduler.refresh(RequestThrottle.NONE);
 
-		assertThat(cache.get("9999")).get().extracting(QuoteCache.Entry::status).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
-		verify(holdingService, never()).recordQuote(any(), any());
+		assertThat(cache.get("9999").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
+		verify(stockService, never()).recordQuote(any());
 	}
 
 	// ===== 已存在的持股近兩個月都沒有成交資料（下市判斷 A + B） =====
 
 	@Test
 	void 原市場查無_另一個市場查到_判斷為轉市場並更新市場別() {
-		// 情境：6488 原本記為上櫃，後來轉上市（代號不變）
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "6488", Market.TPEX)));
+		held(stock("6488", Market.TPEX)); // 原本記為上櫃，後來轉上市（代號不變）
 		CountingClient twse = okClient(Market.TWSE);
 		CountingClient tpex = new CountingClient(Market.TPEX, code -> Optional.empty());
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, tpex);
 
 		scheduler.refresh(RequestThrottle.NONE);
 
-		assertThat(tpex.requested).containsExactly("6488");
-		assertThat(twse.requested).containsExactly("6488");
 		assertThat(cache.get("6488").get().status()).isEqualTo(QuoteStatus.OK);
 		assertThat(cache.get("6488").get().quote().market()).isEqualTo(Market.TWSE);
-		// 寫回資料庫時帶的是「上市」的行情 → recordQuote 會把市場別更新成 TWSE
-		verify(holdingService).recordQuote(eq(1L), argThat(quote -> quote.market() == Market.TWSE));
-		assertThat(tpex.lastTradeRequested).isEmpty(); // 已經找到，不需要往前多查
+		verify(stockService).recordQuote(argThat(quote -> quote.market() == Market.TWSE));
+		assertThat(tpex.lastTradeRequested).isEmpty();
 	}
 
 	@Test
-	void 兩個市場近期都無成交_往前找到最後成交_寫回上次收盤價並標記近期無成交() {
-		StockQuote lastTrade = new StockQuote("2330", "台積電", Market.TWSE, new BigDecimal("950.00"),
-				LocalDate.of(2026, 7, 31));
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
+	void 兩個市場近期都無成交_往前找到最後成交_寫回股票表並標記近期無成交() {
+		StockQuote lastTrade = new StockQuote("2330", "台積電", Market.TWSE, new BigDecimal("950.00"), LocalDate.of(2026, 7, 31));
+		held(stock("2330", Market.TWSE));
 		CountingClient twse = new CountingClient(Market.TWSE, code -> Optional.empty(), code -> Optional.of(lastTrade));
-		CountingClient tpex = new CountingClient(Market.TPEX, code -> Optional.empty());
-		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse, tpex);
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0), twse,
+				new CountingClient(Market.TPEX, code -> Optional.empty()));
 
 		scheduler.refresh(RequestThrottle.NONE);
 
-		assertThat(twse.lastTradeRequested).containsExactly("2330"); // 只往原市場多查
-		assertThat(tpex.lastTradeRequested).isEmpty();
-		verify(holdingService).recordQuote(1L, lastTrade);
+		assertThat(twse.lastTradeRequested).containsExactly("2330");
+		verify(stockService).recordQuote(lastTrade);
 		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
 	}
 
 	@Test
-	void 往前也找不到成交_標記近期無成交資料_不寫回資料庫() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
+	void 往前也找不到成交_標記近期無成交資料_不寫回() {
+		held(stock("2330", Market.TWSE));
 		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 9, 0),
 				new CountingClient(Market.TWSE, code -> Optional.empty()),
 				new CountingClient(Market.TPEX, code -> Optional.empty()));
@@ -253,12 +296,12 @@ class QuoteRefreshSchedulerTest {
 		scheduler.refresh(RequestThrottle.NONE);
 
 		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
-		verify(holdingService, never()).recordQuote(any(), any());
+		verify(stockService, never()).recordQuote(any());
 	}
 
 	@Test
-	void 原市場查無但另一個市場連不上_無法判斷是否轉市場_標記未取得不下結論() {
-		when(holdingService.findAll()).thenReturn(List.of(holding(1L, "2330", Market.TWSE)));
+	void 原市場查無但另一個市場連不上_標記未取得不下結論() {
+		held(stock("2330", Market.TWSE));
 		CountingClient twse = new CountingClient(Market.TWSE, code -> Optional.empty());
 		CountingClient tpex = new CountingClient(Market.TPEX, code -> {
 			throw new QuoteUnavailableException("連不上");
@@ -268,7 +311,42 @@ class QuoteRefreshSchedulerTest {
 		scheduler.refresh(RequestThrottle.NONE);
 
 		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.UNAVAILABLE);
-		assertThat(twse.lastTradeRequested).isEmpty(); // 沒辦法確認，不往下查
+		assertThat(twse.lastTradeRequested).isEmpty();
+	}
+
+	@Test
+	void 近期無成交_同一天第二次只做快速重查_不再查另一個市場和往前幾個月() {
+		tradingDay(true);
+		held(stock("2330", Market.TWSE));
+		CountingClient twse = new CountingClient(Market.TWSE, code -> Optional.empty());
+		CountingClient tpex = new CountingClient(Market.TPEX, code -> Optional.empty());
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 15, 0), twse, tpex);
+
+		scheduler.refresh(RequestThrottle.NONE); // 第一次：完整檢查
+		cache.putNoRecentTrade("2330", at(FRIDAY, 14, 20)); // 模擬已過 40 分鐘
+		scheduler.refresh(RequestThrottle.NONE); // 第二次（同一天）：快速重查
+
+		assertThat(twse.requested).hasSize(2);
+		assertThat(tpex.requested).hasSize(1);
+		assertThat(twse.lastTradeRequested).hasSize(1);
+	}
+
+	@Test
+	void 近期無成交_快速重查時有成交了_立刻恢復正常() {
+		tradingDay(true);
+		held(stock("2330", Market.TWSE));
+		List<Optional<StockQuote>> answers = new ArrayList<>(List.of(Optional.empty(),
+				Optional.of(quote("2330", Market.TWSE, FRIDAY))));
+		CountingClient twse = new CountingClient(Market.TWSE, code -> answers.remove(0));
+		QuoteRefreshScheduler scheduler = scheduler(at(FRIDAY, 15, 0), twse,
+				new CountingClient(Market.TPEX, code -> Optional.empty()));
+
+		scheduler.refresh(RequestThrottle.NONE);
+		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.NO_RECENT_TRADE);
+
+		cache.putNoRecentTrade("2330", at(FRIDAY, 14, 20));
+		scheduler.refresh(RequestThrottle.NONE);
+		assertThat(cache.get("2330").get().status()).isEqualTo(QuoteStatus.OK);
 	}
 
 	// ---- 輔助 ----
@@ -277,37 +355,37 @@ class QuoteRefreshSchedulerTest {
 		Clock clock = Clock.fixed(now.atZone(TAIPEI).toInstant(), TAIPEI);
 		QuoteProperties properties = new QuoteProperties("http://twse.test", "http://tpex.test", "http://holiday.test", false,
 				Duration.ofSeconds(3), Duration.ofSeconds(4), Duration.ofSeconds(9),
-				true, Duration.ofMinutes(10), Duration.ZERO, LocalTime.of(13, 30), 4);
-		return new QuoteRefreshScheduler(twse, tpex, calendar, cache, holdingService, properties, clock);
+				true, Duration.ofMinutes(10), Duration.ZERO, LocalTime.of(13, 30), 4, LocalTime.of(16, 0));
+		return new QuoteRefreshScheduler(twse, tpex, calendar, cache, stockService, properties, clock);
+	}
+
+	private void tradingDay(boolean open) {
+		when(calendar.isTradingDay(eq(FRIDAY), any())).thenReturn(open);
+	}
+
+	private void held(Stock... stocks) {
+		when(stockService.findHeld()).thenReturn(List.of(stocks));
+	}
+
+	private static Stock stock(String code, Market market) {
+		return new Stock(code, market == null ? null : "測試股", market, null, null, LocalDateTime.of(2026, 11, 20, 0, 0));
 	}
 
 	private static LocalDateTime at(LocalDate date, int hour, int minute) {
 		return date.atTime(hour, minute);
 	}
 
-	private static QuoteCache.Entry okEntry(LocalDate priceDate) {
-		StockQuote quote = new StockQuote("2330", "台積電", Market.TWSE, new BigDecimal("1100"), priceDate);
-		return new QuoteCache.Entry(QuoteStatus.OK, quote, priceDate.atTime(14, 0));
+	private static StockQuote quote(String code, Market market, LocalDate date) {
+		return new StockQuote(code, "測試股", market, new BigDecimal("100.00"), date);
 	}
 
+	private static QuoteCache.Entry okEntry(String code, LocalDate priceDate) {
+		return new QuoteCache.Entry(QuoteStatus.OK, quote(code, Market.TWSE, priceDate), priceDate.atTime(14, 0));
+	}
+
+	/** 永遠回傳 11/19（昨天）收盤價的查詢來源 */
 	private static CountingClient okClient(Market market) {
-		return new CountingClient(market, code -> Optional.of(
-				new StockQuote(code, "測試股", market, new BigDecimal("100.00"), THURSDAY)));
-	}
-
-	/** 持股的 id 由資料庫產生、沒有 setter，測試用反射設定 */
-	private static Holding holding(Long id, String code, Market market) {
-		Holding holding = new Holding();
-		holding.setCode(code);
-		holding.setMarket(market);
-		try {
-			Field idField = Holding.class.getDeclaredField("id");
-			idField.setAccessible(true);
-			idField.set(holding, id);
-		} catch (ReflectiveOperationException e) {
-			throw new IllegalStateException(e);
-		}
-		return holding;
+		return new CountingClient(market, code -> Optional.of(quote(code, market, THURSDAY)));
 	}
 
 	/**

@@ -23,6 +23,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param requestGap      背景排程：每一次請求之間至少間隔多久（避免被證交所擋）
  * @param marketCloseTime 收盤時間（台北時間）：這個時間之後才開始等「今天的收盤價」
  * @param lookbackMonths  已存在的持股近兩個月都查不到時，再往前查幾個月找「最後一次成交」
+ * @param staleGiveUpAfter 這個時間（台北時間）之後，同一檔連續 3 次查到的都不是今天的收盤價，今天就不再等（颱風假、當天停止交易）
  */
 @ConfigurationProperties(prefix = "app.quote")
 public record QuoteProperties(
@@ -37,5 +38,6 @@ public record QuoteProperties(
 		Duration refreshInterval,
 		Duration requestGap,
 		LocalTime marketCloseTime,
-		int lookbackMonths) {
+		int lookbackMonths,
+		LocalTime staleGiveUpAfter) {
 }

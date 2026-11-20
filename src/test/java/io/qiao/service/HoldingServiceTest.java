@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.qiao.entity.Holding;
 import io.qiao.entity.Market;
+import io.qiao.entity.Stock;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingNotFoundException;
 import io.qiao.exception.QuoteUnavailableException;
@@ -25,6 +26,7 @@ import io.qiao.exception.StockNotFoundException;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.HoldingRepository;
+import io.qiao.repository.StockRepository;
 
 /**
  * 持股 Service 測試（H2 記憶體資料庫，Flyway 一樣會建表）。
@@ -41,6 +43,12 @@ class HoldingServiceTest {
 	@Autowired
 	private HoldingRepository holdingRepository;
 
+	@Autowired
+	private StockService stockService;
+
+	@Autowired
+	private StockRepository stockRepository;
+
 	@MockitoBean
 	private StockLookupService stockLookupService;
 
@@ -52,30 +60,53 @@ class HoldingServiceTest {
 	}
 
 	@Test
-	void 新增持股_存入官方查到的名稱市場與上次收盤價() {
+	void 新增持股_官方查到的名稱市場與上次收盤價存進股票表() {
 		when(stockLookupService.lookup("6488")).thenReturn(new StockQuote(
 				"6488", "環球晶", Market.TPEX, new BigDecimal("490.00"), LocalDate.of(2026, 11, 19)));
 
-		Holding saved = holdingService.create("6488", 1, new BigDecimal("600"));
+		holdingService.create("6488", 1, new BigDecimal("600"));
 
-		assertThat(saved.getName()).isEqualTo("環球晶");
-		assertThat(saved.getMarket()).isEqualTo(Market.TPEX);
-		assertThat(saved.getLastClosePrice()).isEqualByComparingTo("490.00");
-		assertThat(saved.getLastPriceDate()).isEqualTo(LocalDate.of(2026, 11, 19));
+		Stock stock = stockRepository.findById("6488").orElseThrow();
+		assertThat(stock.getName()).isEqualTo("環球晶");
+		assertThat(stock.getMarket()).isEqualTo(Market.TPEX);
+		assertThat(stock.getLastClosePrice()).isEqualByComparingTo("490.00");
+		assertThat(stock.getLastPriceDate()).isEqualTo(LocalDate.of(2026, 11, 19));
 	}
 
 	@Test
-	void 排程查到另一個市場的行情_更新市場別_轉上市() {
+	void 排程查到另一個市場的行情_股票表市場別更新_轉上市_持股不受影響() {
 		when(stockLookupService.lookup("6488")).thenReturn(new StockQuote(
 				"6488", "環球晶", Market.TPEX, new BigDecimal("490.00"), LocalDate.of(2026, 11, 19)));
 		Holding saved = holdingService.create("6488", 1, new BigDecimal("600"));
 
-		holdingService.recordQuote(saved.getId(), new StockQuote(
+		stockService.recordQuote(new StockQuote(
 				"6488", "環球晶", Market.TWSE, new BigDecimal("500.00"), LocalDate.of(2026, 11, 20)));
 
-		Holding updated = holdingRepository.findById(saved.getId()).orElseThrow();
-		assertThat(updated.getMarket()).isEqualTo(Market.TWSE);
-		assertThat(updated.getLastClosePrice()).isEqualByComparingTo("500.00");
+		Stock stock = stockRepository.findById("6488").orElseThrow();
+		assertThat(stock.getMarket()).isEqualTo(Market.TWSE);
+		assertThat(stock.getLastClosePrice()).isEqualByComparingTo("500.00");
+		Holding holding = holdingRepository.findById(saved.getId()).orElseThrow();
+		assertThat(holding.getLots()).isEqualTo(1);
+		assertThat(holding.getBuyPrice()).isEqualByComparingTo("600");
+	}
+
+	@Test
+	void 刪除持股_股票資訊保留() {
+		Holding saved = holdingService.create("2330", 1, new BigDecimal("1000"));
+
+		holdingService.delete(saved.getId());
+
+		assertThat(stockRepository.existsById("2330")).isTrue();
+	}
+
+	@Test
+	void 刪除後重新新增同一代號_股票表已有資料也能新增() {
+		Holding first = holdingService.create("2330", 1, new BigDecimal("1000"));
+		holdingService.delete(first.getId());
+
+		Holding again = holdingService.create("2330", 2, new BigDecimal("1100"));
+
+		assertThat(again.getLots()).isEqualTo(2);
 	}
 
 	@Test
