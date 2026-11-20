@@ -61,6 +61,78 @@ class HoldingControllerTest {
 	@Autowired
 	private QuoteCache quoteCache;
 
+	// ===== 第 4 題：清單的盈虧、收益率與頁面最上方的總計 =====
+
+	/** 讓 0050 的收盤價是 145.50（題目例子 2），其他代號維持預設的 1,100.00（例子 1 的收盤價） */
+	private void stubEtf0050() {
+		when(stockLookupService.lookup("0050")).thenReturn(new StockQuote(
+				"0050", "元大台灣50", Market.TWSE, new BigDecimal("145.50"), LocalDate.of(2026, 11, 19)));
+	}
+
+	@Test
+	void 盈虧_題目例子1賺錢_紅色_例子2虧錢_綠色_總計為規格範例() throws Exception {
+		stubEtf0050();
+		holdingService.create("2330", 1, new BigDecimal("1000.00")); // 收盤 1,100 → +93,708、+9.36%
+		holdingService.create("0050", 2, new BigDecimal("150.00"));  // 收盤 145.5 → -10,132、-3.37%
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(status().isOk())
+				// 每一筆
+				.andExpect(content().string(containsString("+93,708")))
+				.andExpect(content().string(containsString("+9.36%")))
+				.andExpect(content().string(containsString("-10,132")))
+				.andExpect(content().string(containsString("-3.37%")))
+				.andExpect(content().string(containsString("text-profit")))
+				.andExpect(content().string(containsString("text-loss")))
+				// 總計（規格範例：total_cost 1,301,852、market_value 1,391,000、pnl 83,576、6.42%）
+				.andExpect(content().string(containsString("1,301,852")))
+				.andExpect(content().string(containsString("1,391,000")))
+				.andExpect(content().string(containsString("+83,576 元")))
+				.andExpect(content().string(containsString("+6.42%")));
+	}
+
+	@Test
+	void 盈虧_取不到收盤價_顯示無法計算與原因_總計加註未計入() throws Exception {
+		stubEtf0050();
+		holdingService.create("2330", 1, new BigDecimal("1000.00"));
+		holdingService.create("0050", 2, new BigDecimal("150.00"));
+		quoteCache.putUnavailable("0050", LocalDateTime.of(2026, 11, 20, 14, 0));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("無法計算")))
+				.andExpect(content().string(containsString("尚未取得收盤價")))
+				.andExpect(content().string(containsString("筆未取得收盤價，未計入市值與盈虧")))
+				.andExpect(content().string(containsString("1,301,852")))    // 總成本兩筆都算
+				.andExpect(content().string(containsString("+93,708 元")));  // 總盈虧只有 2330
+	}
+
+	@Test
+	void 盈虧_近期無成交資料_原因顯示近期無成交資料() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000.00"));
+		quoteCache.putNoRecentTrade("2330", LocalDateTime.of(2026, 11, 20, 14, 0));
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("無法計算")))
+				.andExpect(content().string(containsString("<div class=\"small text-muted\">近期無成交資料</div>")));
+	}
+
+	@Test
+	void 總計_全部取不到收盤價_顯示暫時無法計算_不顯示誤導的0() throws Exception {
+		holdingService.create("2330", 1, new BigDecimal("1000.00"));
+		quoteCache.remove("2330"); // 模擬剛啟動、還沒查到
+
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("尚未取得收盤價，暫時無法計算")))
+				.andExpect(content().string(not(containsString("0.00%"))))
+				.andExpect(content().string(containsString("1,001,425"))); // 總成本仍顯示
+	}
+
+	@Test
+	void 總計_沒有持股_顯示說明() throws Exception {
+		mockMvc.perform(get("/holdings"))
+				.andExpect(content().string(containsString("目前沒有持股，新增後即可計算盈虧")));
+	}
+
 	@Test
 	void 清單收盤價_查詢成功_顯示收盤價與日期() throws Exception {
 		holdingService.create("2330", 1, new BigDecimal("1000")); // 新增時查到的行情會直接放進快取

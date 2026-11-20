@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import io.qiao.dto.HoldingForm;
+import io.qiao.dto.HoldingListView;
 import io.qiao.entity.Holding;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.QuoteUnavailableException;
@@ -51,7 +52,9 @@ public class HoldingController {
 	/** 清單（收盤價只讀記憶體快取，不會每次打開就查官方） */
 	@GetMapping
 	public String list(Model model) {
-		model.addAttribute("holdings", holdingService.findAllViews());
+		HoldingListView listView = holdingService.findListWithSummary();
+		model.addAttribute("holdings", listView.holdings());
+		model.addAttribute("summary", listView.summary());
 		return "holdings/list";
 	}
 
