@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +50,11 @@ import io.qiao.service.TradeService;
 @AutoConfigureMockMvc
 @Transactional
 class DataErrorIsolationTest {
+
+	/** v2 寫入一律要帶 Idempotency-Key（C7-1 b）；每個不同的操作用新的 key */
+	private static String newKey() {
+		return UUID.randomUUID().toString();
+	}
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -159,7 +165,7 @@ class DataErrorIsolationTest {
 
 	@Test
 	void 使用者用2點0把推估的買進日期改早_資料恢復正常() throws Exception {
-		mockMvc.perform(put("/api/v2/trades/{id}", brokenBuy.getId()).contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(put("/api/v2/trades/{id}", brokenBuy.getId()).header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"trade_date\":\"2026-01-05\",\"shares\":1000,\"price\":\"10.00\",\"version\":"
 						+ brokenBuy.getVersion() + "}"))
 				.andExpect(status().isOk())
@@ -178,7 +184,7 @@ class DataErrorIsolationTest {
 		Trade estimated = tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(holdingId).get(0);
 		LocalDate today = LocalDate.now(clock);
 
-		mockMvc.perform(post("/api/v2/holdings/{code}/trades", "2317").contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(post("/api/v2/holdings/{code}/trades", "2317").header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"side\":\"SELL\",\"trade_date\":\"2026-03-02\",\"shares\":1000,\"price\":\"160.00\"}"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("OVERSELL"))
@@ -194,7 +200,7 @@ class DataErrorIsolationTest {
 
 	@Test
 	void 賣超但沒有推估日期的買進_訊息不加提示() throws Exception {
-		mockMvc.perform(post("/api/v2/holdings/{code}/trades", "2330").contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(post("/api/v2/holdings/{code}/trades", "2330").header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"side\":\"SELL\",\"trade_date\":\"2026-05-15\",\"shares\":301,\"price\":\"650.00\"}"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.message").value("2026-05-15 賣出 301 股，但當時只持有 300 股"))

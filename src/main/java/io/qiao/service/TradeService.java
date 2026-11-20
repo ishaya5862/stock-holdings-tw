@@ -19,6 +19,7 @@ import io.qiao.calculation.PositionResult;
 import io.qiao.calculation.TradeInput;
 import io.qiao.calculation.TradeSide;
 import io.qiao.entity.Holding;
+import io.qiao.entity.IdempotencyRecord;
 import io.qiao.entity.Trade;
 import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.InvalidTradeException;
@@ -65,11 +66,14 @@ public class TradeService {
 	private final QuoteCache quoteCache;
 	private final PositionCalculator positionCalculator;
 	private final TransactionTemplate transactionTemplate;
+	private final IdempotencyGuard idempotencyGuard;
 	private final Clock clock;
 
 	public TradeService(HoldingRepository holdingRepository, TradeRepository tradeRepository, HoldingLock holdingLock,
 			StockService stockService, StockLookupService stockLookupService, QuoteCache quoteCache,
-			PositionCalculator positionCalculator, TransactionTemplate transactionTemplate, Clock clock) {
+			PositionCalculator positionCalculator, TransactionTemplate transactionTemplate,
+			IdempotencyGuard idempotencyGuard, Clock clock) {
+		this.idempotencyGuard = idempotencyGuard;
 		this.holdingRepository = holdingRepository;
 		this.tradeRepository = tradeRepository;
 		this.holdingLock = holdingLock;
@@ -98,6 +102,17 @@ public class TradeService {
 	 * @throws HoldingBusyException                        連續 3 次被其他裝置的建立、刪除打斷
 	 */
 	public TradeResult buy(String code, LocalDate tradeDate, long shares, BigDecimal price) {
+		return buy(code, tradeDate, shares, price, null);
+	}
+
+	/**
+	 * 買進（帶 Idempotency-Key，C7）。idempotency 為 null 時不做防重送（內部與測試使用）。
+	 *
+	 * @throws io.qiao.exception.IdempotencyKeyUsedException    這個 key 已經用過（API 層回傳那次的結果）
+	 * @throws io.qiao.exception.IdempotencyInProgressException 同一個 key 的前一個請求還在處理
+	 */
+	public TradeResult buy(String code, LocalDate tradeDate, long shares, BigDecimal price,
+			IdempotencyRequest idempotency) {
 		String normalizedCode = StockCodes.normalize(code);
 		validate(tradeDate, shares, price);
 		LocalDateTime now = LocalDateTime.now(clock);
@@ -109,20 +124,28 @@ public class TradeService {
 					quote = stockLookupService.lookup(normalizedCode); // 交易外：查官方時不佔資料庫連線
 					quoteCache.putSuccess(quote, now); // 剛查到的行情放進快取，回傳結果就有未實現損益
 				}
-				Optional<TradeResult> created = createHoldingAndBuy(quote, tradeDate, shares, price, now);
+				Optional<TradeResult> created = createHoldingAndBuy(quote, tradeDate, shares, price, now, idempotency);
 				if (created.isPresent()) {
 					return recalculated(created.get());
 				}
 				// C3-4：撞到代號唯一 → 另一個裝置剛好同時建立了這檔 → 改成加到已存在的持股
 			}
-			Optional<TradeResult> added = inTransaction(() -> holdingLock.byCodeIfPresent(normalizedCode)
-					.map(holding -> addTrade(holding, TradeSide.BUY, tradeDate, shares, price, now)));
-			if (added.isPresent()) {
-				return recalculated(added.get());
+			try {
+				return recalculated(inTransaction(() -> withIdempotency(idempotency, () -> addTrade(
+						holdingLock.byCodeIfPresent(normalizedCode).orElseThrow(HoldingVanished::new),
+						TradeSide.BUY, tradeDate, shares, price, now))));
+			} catch (HoldingVanished e) {
+				// 鎖住時持股已被另一個裝置刪除（刪掉最後一筆交易）→ 交易已復原（含 key），重新建立
 			}
-			// 鎖住時持股已被另一個裝置刪除（刪掉最後一筆交易）→ 重新建立
 		}
 		throw new HoldingBusyException(null);
+	}
+
+	/** 鎖住時持股已不存在：丟出來讓這個資料庫交易復原（連同佔住的 key），由 buy 重試 */
+	private static final class HoldingVanished extends RuntimeException {
+		HoldingVanished() {
+			super(null, null, false, false); // 只用來控制流程，不需要堆疊資訊
+		}
 	}
 
 	/**
@@ -130,9 +153,9 @@ public class TradeService {
 	 * 資料庫因為「代號重複」以外的原因拒絕（例如名稱太長）→ 照原本的錯誤丟出，不要誤當成「別人剛建立了」。
 	 */
 	private Optional<TradeResult> createHoldingAndBuy(StockQuote quote, LocalDate tradeDate, long shares,
-			BigDecimal price, LocalDateTime now) {
+			BigDecimal price, LocalDateTime now, IdempotencyRequest idempotency) {
 		try {
-			return Optional.of(inTransaction(() -> {
+			return Optional.of(inTransaction(() -> withIdempotency(idempotency, () -> {
 				stockService.recordQuote(quote); // 先寫股票表（外鍵：持股的代號一定要在股票表裡）
 				Holding holding = new Holding();
 				holding.setCode(quote.code());
@@ -140,7 +163,7 @@ public class TradeService {
 				holding.setUpdatedAt(now);
 				// saveAndFlush：立刻寫入，讓 UNIQUE 限制的錯誤在這裡發生
 				return addTrade(holdingRepository.saveAndFlush(holding), TradeSide.BUY, tradeDate, shares, price, now);
-			}));
+			})));
 		} catch (DataIntegrityViolationException e) {
 			if (holdingRepository.findByCode(quote.code()).isPresent()) {
 				return Optional.empty(); // 確實是別人剛建立了這檔
@@ -158,11 +181,17 @@ public class TradeService {
 	 * @throws io.qiao.calculation.OversellException 賣出當時持有的股數不夠（含補登過去日期的賣出）
 	 */
 	public TradeResult sell(String code, LocalDate tradeDate, long shares, BigDecimal price) {
+		return sell(code, tradeDate, shares, price, null);
+	}
+
+	/** 賣出（帶 Idempotency-Key，C7）；idempotency 為 null 時不做防重送 */
+	public TradeResult sell(String code, LocalDate tradeDate, long shares, BigDecimal price,
+			IdempotencyRequest idempotency) {
 		String normalizedCode = StockCodes.normalize(code);
 		validate(tradeDate, shares, price);
 		LocalDateTime now = LocalDateTime.now(clock);
-		return recalculated(inTransaction(
-				() -> addTrade(lockByCode(normalizedCode), TradeSide.SELL, tradeDate, shares, price, now)));
+		return recalculated(inTransaction(() -> withIdempotency(idempotency,
+				() -> addTrade(lockByCode(normalizedCode), TradeSide.SELL, tradeDate, shares, price, now))));
 	}
 
 	/** 在已鎖住的持股加一筆交易：先整條重算驗證（賣超就丟例外、不寫入），通過才寫入 */
@@ -189,9 +218,15 @@ public class TradeService {
 	 */
 	public TradeResult updateTrade(Long tradeId, Long expectedVersion, LocalDate tradeDate, long shares,
 			BigDecimal price) {
+		return updateTrade(tradeId, expectedVersion, tradeDate, shares, price, null);
+	}
+
+	/** 修改一筆交易（帶 Idempotency-Key，C7）；idempotency 為 null 時不做防重送 */
+	public TradeResult updateTrade(Long tradeId, Long expectedVersion, LocalDate tradeDate, long shares,
+			BigDecimal price, IdempotencyRequest idempotency) {
 		validate(tradeDate, shares, price);
 		LocalDateTime now = LocalDateTime.now(clock);
-		return recalculated(inTransaction(() -> {
+		return recalculated(inTransaction(() -> withIdempotency(idempotency, () -> {
 			Holding holding = lockHoldingOfTrade(tradeId);
 			Trade trade = loadWithVersion(tradeId, expectedVersion);
 
@@ -207,7 +242,7 @@ public class TradeService {
 			holding.setUpdatedAt(now);
 			tradeRepository.flush(); // 立刻寫入：交易的版本號 +1，回傳的才是新版本
 			return new TradeResult(holding, trade, null, false);
-		}));
+		})));
 	}
 
 	/**
@@ -218,8 +253,13 @@ public class TradeService {
 	 * @throws io.qiao.calculation.OversellException 刪掉這筆買進後，之後的賣出變成賣超
 	 */
 	public TradeResult deleteTrade(Long tradeId, Long expectedVersion) {
+		return deleteTrade(tradeId, expectedVersion, null);
+	}
+
+	/** 刪除一筆交易（帶 Idempotency-Key，C7）；idempotency 為 null 時不做防重送 */
+	public TradeResult deleteTrade(Long tradeId, Long expectedVersion, IdempotencyRequest idempotency) {
 		LocalDateTime now = LocalDateTime.now(clock);
-		TradeResult result = inTransaction(() -> {
+		TradeResult result = inTransaction(() -> withIdempotency(idempotency, () -> {
 			Holding holding = lockHoldingOfTrade(tradeId);
 			Trade trade = loadWithVersion(tradeId, expectedVersion);
 
@@ -237,8 +277,25 @@ public class TradeService {
 			tradeRepository.delete(trade);
 			holding.setUpdatedAt(now);
 			return new TradeResult(holding, null, null, false);
-		});
+		}));
 		return result.holdingDeleted() ? result : recalculated(result);
+	}
+
+	/**
+	 * 防止重送（C7-2 a）：在「目前這個資料庫交易」裡先佔住 key，再執行寫入，最後記下結果。
+	 * key 與交易一起提交、一起復原：寫入失敗（例如賣超）→ key 不會留下，重送時重新執行。
+	 * 先佔 key 再鎖持股：同一個 key 同時到達時，第二個在佔 key 這一步就排隊等待，不會進到寫入。
+	 * 記下結果用 idempotencyGuard.complete（明確 save），原因見該方法說明。
+	 */
+	private TradeResult withIdempotency(IdempotencyRequest idempotency, Supplier<TradeResult> write) {
+		if (idempotency == null) {
+			return write.get();
+		}
+		IdempotencyRecord record = idempotencyGuard.claim(idempotency);
+		TradeResult result = write.get();
+		idempotencyGuard.complete(record, result.trade() != null ? result.trade().getId() : null,
+				result.holding().getCode(), result.holdingDeleted());
+		return result;
 	}
 
 	/** 交易 → 所屬持股 → 鎖住。只查持股 id（不載入交易），鎖住之後才載入交易，讀到的才是最新版本 */

@@ -20,11 +20,14 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import com.fasterxml.jackson.databind.JsonMappingException;
 
+import io.qiao.api.v2.IdempotencyKeyReusedException;
+import io.qiao.api.v2.IdempotencyKeys;
 import io.qiao.api.v2.RequestFieldsException;
 import io.qiao.calculation.OversellException;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.IdempotencyInProgressException;
 import io.qiao.exception.InvalidTradeException;
 import io.qiao.exception.TradeNotFoundException;
 import io.qiao.exception.TradeVersionConflictException;
@@ -114,6 +117,25 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(TradeVersionConflictException.class)
 	public ResponseEntity<ApiErrorResponse> handleVersionConflict(TradeVersionConflictException e) {
 		return error(ApiErrorCode.VERSION_CONFLICT, e.getMessage());
+	}
+
+	/** 2.0（v2，C7）：Idempotency-Key 缺少或格式不對 → 400 */
+	@ExceptionHandler(IdempotencyKeys.IdempotencyKeyException.class)
+	public ResponseEntity<ApiErrorResponse> handleIdempotencyKey(IdempotencyKeys.IdempotencyKeyException e) {
+		return error(e.missing() ? ApiErrorCode.IDEMPOTENCY_KEY_REQUIRED : ApiErrorCode.IDEMPOTENCY_KEY_INVALID,
+				e.getMessage());
+	}
+
+	/** 2.0（v2，C7）：同一個 key 用在不同內容 → 422 */
+	@ExceptionHandler(IdempotencyKeyReusedException.class)
+	public ResponseEntity<ApiErrorResponse> handleIdempotencyKeyReused(IdempotencyKeyReusedException e) {
+		return error(ApiErrorCode.IDEMPOTENCY_KEY_REUSED, e.getMessage());
+	}
+
+	/** 2.0（v2，C7）：同一個 key 的前一個請求還在處理 → 409 */
+	@ExceptionHandler(IdempotencyInProgressException.class)
+	public ResponseEntity<ApiErrorResponse> handleIdempotencyInProgress(IdempotencyInProgressException e) {
+		return error(ApiErrorCode.IDEMPOTENCY_KEY_IN_PROGRESS, IdempotencyInProgressException.USER_MESSAGE);
 	}
 
 	/** 2.0（v2）：目前沒有持有這個代號 → 404 NOT_HELD（例：「目前沒有持有 2330」） */

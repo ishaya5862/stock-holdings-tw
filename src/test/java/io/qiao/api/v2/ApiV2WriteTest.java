@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.UUID;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,11 @@ import io.qiao.service.TradeService;
 @Transactional
 class ApiV2WriteTest {
 
+	/** v2 寫入一律要帶 Idempotency-Key（C7-1 b）；每個不同的操作用新的 key */
+	private static String newKey() {
+		return UUID.randomUUID().toString();
+	}
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -64,7 +70,7 @@ class ApiV2WriteTest {
 	}
 
 	private ResultActions postTrade(String code, String json) throws Exception {
-		return mockMvc.perform(post("/api/v2/holdings/{code}/trades", code)
+		return mockMvc.perform(post("/api/v2/holdings/{code}/trades", code).header("Idempotency-Key", newKey())
 				.contentType(MediaType.APPLICATION_JSON).content(json));
 	}
 
@@ -134,7 +140,7 @@ class ApiV2WriteTest {
 
 	@Test
 	void 沒有內容或缺欄位_400() throws Exception {
-		mockMvc.perform(post("/api/v2/holdings/{code}/trades", "2330").contentType(MediaType.APPLICATION_JSON))
+		mockMvc.perform(post("/api/v2/holdings/{code}/trades", "2330").header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error.fields.body").exists());
 		postTrade("2330", "{}")
@@ -190,7 +196,7 @@ class ApiV2WriteTest {
 		// 先存起來：測試和伺服器在同一個測試交易裡，修改後 trade 這個物件的版本號也會跟著變
 		long versionBefore = trade.getVersion();
 
-		mockMvc.perform(put("/api/v2/trades/{id}", trade.getId()).contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(put("/api/v2/trades/{id}", trade.getId()).header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"trade_date\":\"2026-03-03\",\"shares\":500,\"price\":\"590.50\",\"version\":" + versionBefore + "}"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.trade.trade_date").value("2026-03-03"))
@@ -204,7 +210,7 @@ class ApiV2WriteTest {
 	void 修改_版本號不符_409_VERSION_CONFLICT() throws Exception {
 		Trade trade = tradeService.buy("2330", LocalDate.of(2026, 3, 2), 300, new BigDecimal("600.00")).trade();
 
-		mockMvc.perform(put("/api/v2/trades/{id}", trade.getId()).contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(put("/api/v2/trades/{id}", trade.getId()).header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"trade_date\":\"2026-03-02\",\"shares\":100,\"price\":\"600\",\"version\":" + (trade.getVersion() + 5) + "}"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("VERSION_CONFLICT"))
@@ -215,7 +221,7 @@ class ApiV2WriteTest {
 	void 修改_帶了買賣種類或代號_沒帶版本號_400() throws Exception {
 		Trade trade = tradeService.buy("2330", LocalDate.of(2026, 3, 2), 300, new BigDecimal("600.00")).trade();
 
-		mockMvc.perform(put("/api/v2/trades/{id}", trade.getId()).contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(put("/api/v2/trades/{id}", trade.getId()).header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"side\":\"SELL\",\"code\":\"2317\",\"trade_date\":\"2026-03-02\",\"shares\":100,\"price\":\"600\"}"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error.fields.side").value("買賣種類不能修改；要改請刪除這筆後重新記錄"))
@@ -228,7 +234,7 @@ class ApiV2WriteTest {
 		Trade buy = tradeService.buy("2330", LocalDate.of(2026, 3, 2), 500, new BigDecimal("600.00")).trade();
 		tradeService.sell("2330", LocalDate.of(2026, 5, 15), 300, new BigDecimal("650.00"));
 
-		mockMvc.perform(put("/api/v2/trades/{id}", buy.getId()).contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(put("/api/v2/trades/{id}", buy.getId()).header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"trade_date\":\"2026-03-02\",\"shares\":100,\"price\":\"600\",\"version\":" + buy.getVersion() + "}"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("OVERSELL"))
@@ -242,7 +248,7 @@ class ApiV2WriteTest {
 		tradeService.buy("2330", LocalDate.of(2026, 3, 2), 300, new BigDecimal("600.00"));
 		Trade second = tradeService.buy("2330", LocalDate.of(2026, 5, 15), 500, new BigDecimal("620.00")).trade();
 
-		mockMvc.perform(delete("/api/v2/trades/{id}", second.getId()).param("version", second.getVersion().toString()))
+		mockMvc.perform(delete("/api/v2/trades/{id}", second.getId()).header("Idempotency-Key", newKey()).param("version", second.getVersion().toString()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.trade").value(Matchers.nullValue()))
 				.andExpect(jsonPath("$.holding.shares").value(300))
@@ -253,7 +259,7 @@ class ApiV2WriteTest {
 	void 刪除最後一筆_持股一起刪除_holding是null() throws Exception {
 		Trade only = tradeService.buy("2330", LocalDate.of(2026, 3, 2), 300, new BigDecimal("600.00")).trade();
 
-		mockMvc.perform(delete("/api/v2/trades/{id}", only.getId()).param("version", only.getVersion().toString()))
+		mockMvc.perform(delete("/api/v2/trades/{id}", only.getId()).header("Idempotency-Key", newKey()).param("version", only.getVersion().toString()))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.holding").value(Matchers.nullValue()))
 				.andExpect(jsonPath("$.holding_deleted").value(true));
@@ -264,20 +270,20 @@ class ApiV2WriteTest {
 	void 刪除_沒帶版本號或不是整數_400() throws Exception {
 		Trade only = tradeService.buy("2330", LocalDate.of(2026, 3, 2), 300, new BigDecimal("600.00")).trade();
 
-		mockMvc.perform(delete("/api/v2/trades/{id}", only.getId()))
+		mockMvc.perform(delete("/api/v2/trades/{id}", only.getId()).header("Idempotency-Key", newKey()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error.fields.version").exists());
-		mockMvc.perform(delete("/api/v2/trades/{id}", only.getId()).param("version", "abc"))
+		mockMvc.perform(delete("/api/v2/trades/{id}", only.getId()).header("Idempotency-Key", newKey()).param("version", "abc"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.error.fields.version").value("版本號 version 必須是整數"));
 	}
 
 	@Test
 	void 交易id不存在或不是數字_404_TRADE_NOT_FOUND() throws Exception {
-		mockMvc.perform(delete("/api/v2/trades/{id}", "99999").param("version", "0"))
+		mockMvc.perform(delete("/api/v2/trades/{id}", "99999").header("Idempotency-Key", newKey()).param("version", "0"))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error.code").value("TRADE_NOT_FOUND"));
-		mockMvc.perform(put("/api/v2/trades/{id}", "abc").contentType(MediaType.APPLICATION_JSON)
+		mockMvc.perform(put("/api/v2/trades/{id}", "abc").header("Idempotency-Key", newKey()).contentType(MediaType.APPLICATION_JSON)
 				.content("{\"trade_date\":\"2026-03-02\",\"shares\":100,\"price\":\"600\",\"version\":0}"))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.error.code").value("TRADE_NOT_FOUND"));

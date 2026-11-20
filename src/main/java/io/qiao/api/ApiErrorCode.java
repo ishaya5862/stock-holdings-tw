@@ -42,6 +42,18 @@ public enum ApiErrorCode {
 	/** 2.0（v2）：修改、刪除交易時版本號不符，另一個裝置已經改過（C3-5、C6-2 b） */
 	VERSION_CONFLICT(HttpStatus.CONFLICT),
 
+	/** 2.0（v2，C7）：寫入請求沒帶 Idempotency-Key（C7-1 b 一律必帶；IETF 草案建議 400） */
+	IDEMPOTENCY_KEY_REQUIRED(HttpStatus.BAD_REQUEST),
+
+	/** 2.0（v2，C7）：Idempotency-Key 格式不對（1～64 個英數字、-、_，建議 UUID） */
+	IDEMPOTENCY_KEY_INVALID(HttpStatus.BAD_REQUEST),
+
+	/** 2.0（v2，C7）：同一個 key 用在不同內容或不同 API（IETF 草案建議 422） */
+	IDEMPOTENCY_KEY_REUSED(HttpStatus.UNPROCESSABLE_ENTITY),
+
+	/** 2.0（v2，C7）：同一個 key 的前一個請求還在處理（IETF 草案建議 409），稍後用同一個 key 再送 */
+	IDEMPOTENCY_KEY_IN_PROGRESS(HttpStatus.CONFLICT),
+
 	/** 2.0：同一檔持股正在被另一個請求寫入，等鎖超過 3 秒（C3-2）；稍後再試即可 */
 	HOLDING_BUSY(HttpStatus.CONFLICT),
 
