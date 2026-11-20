@@ -42,10 +42,11 @@ public class QuoteConfig {
 		return new StockLookupService(twseQuoteClient, tpexQuoteClient, properties.lookupTimeout());
 	}
 
-	/** 休市日行事曆（輔助用，查不到時退回「平日都有開盤」） */
+	/** 休市日行事曆（輔助用：官方 API → 內附檔 → 平日都開盤） */
 	@Bean
 	public TradingCalendar tradingCalendar(QuoteProperties properties, ObjectMapper objectMapper, Clock clock) {
-		return new TradingCalendar(restClient(properties.holidayBaseUrl(), properties), objectMapper, clock);
+		return new TradingCalendar(restClient(properties.holidayBaseUrl(), properties), objectMapper, clock,
+				properties.holidayApiEnabled());
 	}
 
 	private RestClient restClient(String baseUrl, QuoteProperties properties) {

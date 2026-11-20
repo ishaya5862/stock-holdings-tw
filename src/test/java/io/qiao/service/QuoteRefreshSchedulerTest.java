@@ -168,7 +168,7 @@ class QuoteRefreshSchedulerTest {
 
 	private QuoteRefreshScheduler scheduler(LocalDateTime now, StockQuoteClient twse, StockQuoteClient tpex) {
 		Clock clock = Clock.fixed(now.atZone(TAIPEI).toInstant(), TAIPEI);
-		QuoteProperties properties = new QuoteProperties("http://twse.test", "http://tpex.test", "http://holiday.test",
+		QuoteProperties properties = new QuoteProperties("http://twse.test", "http://tpex.test", "http://holiday.test", false,
 				Duration.ofSeconds(3), Duration.ofSeconds(4), Duration.ofSeconds(9),
 				true, Duration.ofMinutes(10), Duration.ZERO, LocalTime.of(13, 30));
 		return new QuoteRefreshScheduler(twse, tpex, calendar, cache, holdingService, properties, clock);

@@ -13,7 +13,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @param twseBaseUrl     證交所主機（例：https://www.twse.com.tw），可用環境變數 TWSE_BASE_URL 改掉
  * @param tpexBaseUrl     櫃買中心主機（例：https://www.tpex.org.tw），可用環境變數 TPEX_BASE_URL 改掉
- * @param holidayBaseUrl  休市日行事曆的主機（預設跟證交所相同），可用環境變數 HOLIDAY_BASE_URL 改掉
+ * @param holidayBaseUrl  休市日行事曆的主機（預設真正的證交所，不跟 TWSE_BASE_URL），可用環境變數 HOLIDAY_BASE_URL 改掉
+ * @param holidayApiEnabled 是否查官方休市日 API（false = 不對外連線，只用內附檔），環境變數 HOLIDAY_API_ENABLED
  * @param connectTimeout  連線逾時
  * @param readTimeout     讀取逾時
  * @param lookupTimeout   新增持股時「判斷上市／上櫃」的整體時間上限（題目要求 10 秒內有結果）
@@ -27,6 +28,7 @@ public record QuoteProperties(
 		String twseBaseUrl,
 		String tpexBaseUrl,
 		String holidayBaseUrl,
+		boolean holidayApiEnabled,
 		Duration connectTimeout,
 		Duration readTimeout,
 		Duration lookupTimeout,
