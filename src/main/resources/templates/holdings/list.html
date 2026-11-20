@@ -106,7 +106,21 @@
 						</tr>
 					</thead>
 					<tbody>
-						<tr th:each="h : ${holdings}">
+						<th:block th:each="h : ${holdings}">
+						<!--/*
+							資料異常（朋友回饋 1-1 a）：交易時間線不合理（正常操作不會發生），算不出張數與金額
+							→ 整列顯示原因、不算進總計，請用 2.0 修正；其他持股照常顯示
+						*/-->
+						<tr th:if="${h.hasDataError()}" class="table-danger" data-error-row>
+							<td class="fw-semibold app-number" th:text="${h.code}">2330</td>
+							<td th:text="${h.name} ?: '—'">台積電</td>
+							<td colspan="7" class="small">
+								<i class="bi bi-exclamation-octagon"></i>
+								資料異常，暫時無法計算（未計入總計）：<span th:text="${h.dataError}">2026-11-20 賣出 1000 股，但當時只持有 0 股</span>。
+								請用 2.0 檢查並修正這一檔的交易紀錄。
+							</td>
+						</tr>
+						<tr th:unless="${h.hasDataError()}">
 							<td class="fw-semibold app-number" th:text="${h.code}">2330</td>
 							<!--/* 名稱、市場：新增時從官方取得；第 2 題時新增的舊資料由背景排程補上，補上前顯示「—」 */-->
 							<td>
@@ -192,6 +206,7 @@
 								</form>
 							</td>
 						</tr>
+						</th:block>
 					</tbody>
 				</table>
 			</div>

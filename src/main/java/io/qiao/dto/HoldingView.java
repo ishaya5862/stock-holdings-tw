@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.qiao.calculation.OversellException;
 import io.qiao.calculation.PortfolioSummary;
 import io.qiao.calculation.PositionCalculator;
 import io.qiao.calculation.PositionResult;
@@ -40,6 +41,7 @@ import io.qiao.quote.StockQuote;
  * @param profit         盈虧計算結果；只有取得收盤價時才有值，否則 null（畫面顯示「無法計算」）
  * @param v1Limits       1.0 表達不了的原因（零股、多次買進、賣出）；空的 = 1.0 可以完整表達、可以修改
  * @param hasCents       精確金額有「分」（第一版網頁要附註「四捨五入到元，可能和 2.0 相差幾元」）
+ * @param dataError      資料異常的原因（交易時間線不合理，算不出來）；正常時為 null。異常時 lots、buyPrice、totalCost 為 null
  */
 public record HoldingView(
 		Long id,
@@ -57,7 +59,8 @@ public record HoldingView(
 		BigDecimal totalCost,
 		ProfitResult profit,
 		List<String> v1Limits,
-		boolean hasCents) {
+		boolean hasCents,
+		String dataError) {
 
 	private static final long SHARES_PER_LOT = 1000;
 
@@ -79,8 +82,20 @@ public record HoldingView(
 		LocalDate priceDate = quote != null ? quote.priceDate() : null;
 		BigDecimal priceForProfit = status == QuoteStatus.OK ? closePrice : null;
 
-		PositionResult position = calculator.calculate(holding.getCode(),
-				trades.stream().map(Trade::toInput).toList(), priceForProfit, today);
+		String name = quote != null ? quote.name() : (stock != null ? stock.getName() : null);
+		Market market = quote != null ? quote.market() : (stock != null ? stock.getMarket() : null);
+
+		PositionResult position;
+		try {
+			position = calculator.calculate(holding.getCode(), trades.stream().map(Trade::toInput).toList(),
+					priceForProfit, today);
+		} catch (OversellException e) {
+			// 故障隔離（朋友回饋 1-1 a）：交易時間線不合理（正常操作不會發生），只把這一檔標成「資料異常」，
+			// 其他持股與總計照常。v1 不輸出這一檔（1-2 a），第一版網頁顯示原因；log 由呼叫端（HoldingService）記錄
+			return new HoldingView(holding.getId(), holding.getCode(), name, market, 0, null, null, status, closePrice,
+					priceDate, stock != null ? stock.getLastClosePrice() : null,
+					stock != null ? stock.getLastPriceDate() : null, null, null, List.of(), false, e.getMessage());
+		}
 
 		BigDecimal totalCost = toYuan(position.remainingCost());
 		ProfitResult profit = null;
@@ -103,9 +118,8 @@ public record HoldingView(
 		return new HoldingView(
 				holding.getId(),
 				holding.getCode(),
-				// 名稱、市場以官方為準：快取有值就用快取（這次啟動後查到的最新資料），否則用股票表
-				quote != null ? quote.name() : (stock != null ? stock.getName() : null),
-				quote != null ? quote.market() : (stock != null ? stock.getMarket() : null),
+				name, // 名稱、市場以官方為準：快取有值就用快取（這次啟動後查到的最新資料），否則用股票表
+				market,
 				position.shares(),
 				position.shares() / SHARES_PER_LOT,
 				position.averageBuyPrice(),
@@ -117,7 +131,13 @@ public record HoldingView(
 				totalCost,
 				profit,
 				v1Limits(position.shares(), trades),
-				hasCents);
+				hasCents,
+				null);
+	}
+
+	/** 資料異常（交易時間線不合理、算不出來）：v1 不輸出、總計不算、網頁顯示原因 */
+	public boolean hasDataError() {
+		return dataError != null;
 	}
 
 	/**

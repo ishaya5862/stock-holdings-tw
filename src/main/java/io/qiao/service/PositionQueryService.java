@@ -7,9 +7,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.qiao.calculation.OversellException;
 import io.qiao.calculation.PositionCalculator;
 import io.qiao.calculation.PositionResult;
 import io.qiao.entity.Holding;
@@ -34,6 +37,8 @@ import io.qiao.validation.StockCodes;
  */
 @Service
 public class PositionQueryService {
+
+	private static final Logger log = LoggerFactory.getLogger(PositionQueryService.class);
 
 	private final HoldingRepository holdingRepository;
 	private final TradeRepository tradeRepository;
@@ -87,19 +92,27 @@ public class PositionQueryService {
 		StockQuote quote = entry == null ? null : entry.quote();
 		// 只有查詢成功（OK）才算未實現損益；和 1.0 的規則相同
 		BigDecimal priceForProfit = status == QuoteStatus.OK && quote != null ? quote.closePrice() : null;
-		PositionResult position = positionCalculator.calculate(holding.getCode(),
-				trades.stream().map(Trade::toInput).toList(), priceForProfit, today);
-		return new PositionView(holding, stock, status, quote, trades, position);
+		try {
+			PositionResult position = positionCalculator.calculate(holding.getCode(),
+					trades.stream().map(Trade::toInput).toList(), priceForProfit, today);
+			return new PositionView(holding, stock, status, quote, trades, position, null);
+		} catch (OversellException e) {
+			// 故障隔離（朋友回饋 1-1 a）：這一檔的交易時間線不合理（正常操作不會發生，例如直接改了資料庫），
+			// 只把這一檔標成「資料異常」，其他持股與總計照常計算；交易明細照樣列出，使用者才能修正錯的那一筆
+			log.error("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), e.getMessage());
+			return new PositionView(holding, stock, status, quote, trades, null, e.getMessage());
+		}
 	}
 
 	/**
 	 * 一筆持股的讀取結果。
 	 *
-	 * @param stock    股票資訊（stocks；外鍵保證有，仍容許 null）
-	 * @param status   行情狀態（OK／UPDATING／UNAVAILABLE／NO_RECENT_TRADE）
-	 * @param quote    快取裡的行情；沒有時為 null
-	 * @param trades   這檔的全部交易（依日期、id 排序；和 position.lines() 一一對應）
-	 * @param position 重算結果（股數、成本、已實現、未實現、每一筆交易的明細）
+	 * @param stock     股票資訊（stocks；外鍵保證有，仍容許 null）
+	 * @param status    行情狀態（OK／UPDATING／UNAVAILABLE／NO_RECENT_TRADE）
+	 * @param quote     快取裡的行情；沒有時為 null
+	 * @param trades    這檔的全部交易（依日期、id 排序；和 position.lines() 一一對應）
+	 * @param position  重算結果（股數、成本、已實現、未實現、每一筆交易的明細）；資料異常時為 null
+	 * @param dataError 資料異常的原因（例如「2026-11-20 賣出 1000 股，但當時只持有 0 股」）；正常時為 null
 	 */
 	public record PositionView(
 			Holding holding,
@@ -107,7 +120,12 @@ public class PositionQueryService {
 			QuoteStatus status,
 			StockQuote quote,
 			List<Trade> trades,
-			PositionResult position) {
+			PositionResult position,
+			String dataError) {
+
+		public boolean hasDataError() {
+			return dataError != null;
+		}
 
 		/** 名稱、市場以官方為準：快取有值就用快取（這次啟動後查到的最新資料），否則用股票表（和 1.0 相同） */
 		public String name() {

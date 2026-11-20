@@ -48,6 +48,10 @@ public class ApiV2HoldingController {
 	public List<TradeV2Response> trades(@PathVariable String code) {
 		PositionView view = positionQueryService.findByCode(code);
 		List<Trade> trades = view.trades();
+		if (view.hasDataError()) {
+			// 資料異常、算不出來：照樣列出原始交易，使用者才能找出並修正錯的那一筆（朋友回饋 1-1 a）
+			return trades.stream().map(TradeV2Response::raw).toList();
+		}
 		List<TradeLine> lines = view.position().lines();
 		// 兩者都依「交易日期 → id」排序（資料庫查詢與 PositionCalculator 同一個規則），第 i 筆互相對應
 		return IntStream.range(0, trades.size())

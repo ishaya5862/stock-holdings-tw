@@ -20,6 +20,7 @@ import io.qiao.service.PositionQueryService.PositionView;
  * | realized_pnl   | 字串        | 全部持股（含已全部賣出）的已實現損益加總                                        |
  * | holding_count  | 整數        | 持有中（股數 > 0）的檔數                                                        |
  * | quote_missing  | 整數        | 持有中但取不到收盤價的檔數（不算進市值、未實現，但算進成本）                      |
+ * | data_error_count | 整數      | 資料異常（交易時間線不合理、無法計算）的檔數；這幾檔不算進任何金額                |
  */
 public record SummaryV2Response(
 		@JsonProperty("total_cost") String totalCost,
@@ -28,7 +29,8 @@ public record SummaryV2Response(
 		@JsonProperty("return_pct") String returnPct,
 		@JsonProperty("realized_pnl") String realizedPnl,
 		@JsonProperty("holding_count") int holdingCount,
-		@JsonProperty("quote_missing") int quoteMissing) {
+		@JsonProperty("quote_missing") int quoteMissing,
+		@JsonProperty("data_error_count") int dataErrorCount) {
 
 	private static final BigDecimal HUNDRED = new BigDecimal("100");
 
@@ -39,8 +41,13 @@ public record SummaryV2Response(
 		BigDecimal realizedPnl = BigDecimal.ZERO;
 		int holdingCount = 0;
 		int quoteMissing = 0;
+		int dataErrorCount = 0;
 
 		for (PositionView view : views) {
+			if (view.hasDataError()) {
+				dataErrorCount++; // 資料異常的那一檔不算進任何金額（算不出來），另外計數讓 App 提示使用者
+				continue;
+			}
 			PositionResult position = view.position();
 			realizedPnl = realizedPnl.add(position.realizedPnl()); // 已全部賣出的也算
 			if (position.shares() == 0) {
@@ -61,6 +68,6 @@ public record SummaryV2Response(
 				? null
 				: unrealizedPnl.multiply(HUNDRED).divide(totalCost, 2, RoundingMode.HALF_UP);
 		return new SummaryV2Response(Money.of(totalCost), Money.of(marketValue), Money.of(unrealizedPnl),
-				Money.of(returnPct), Money.of(realizedPnl), holdingCount, quoteMissing);
+				Money.of(returnPct), Money.of(realizedPnl), holdingCount, quoteMissing, dataErrorCount);
 	}
 }

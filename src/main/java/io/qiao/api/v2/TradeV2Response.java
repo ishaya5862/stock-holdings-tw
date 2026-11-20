@@ -23,7 +23,7 @@ import io.qiao.entity.Trade;
  * | tax            | 字串或 null | 證交稅（只有賣出有）                                                 |
  * | cost_of_sold   | 字串或 null | 這次賣出分攤掉的成本（移動平均，到分；只有賣出有）                   |
  * | realized_pnl   | 字串或 null | 這次賣出的已實現損益（只有賣出有）                                   |
- * | shares_after   | 整數        | 這筆交易之後的持有股數                                               |
+ * | shares_after   | 整數或 null | 這筆交易之後的持有股數（amount 到 shares_after：持股資料異常時為 null） |
  * | version        | 整數        | 交易版本號：修改、刪除時要帶上（C3-5），和伺服器不同代表另一個裝置改過 |
  *
  * 排列順序：交易日期 → 輸入順序（同一天依輸入的先後），也就是計算平均成本的順序。
@@ -40,8 +40,24 @@ public record TradeV2Response(
 		@JsonProperty("tax") String tax,
 		@JsonProperty("cost_of_sold") String costOfSold,
 		@JsonProperty("realized_pnl") String realizedPnl,
-		@JsonProperty("shares_after") long sharesAfter,
+		@JsonProperty("shares_after") Long sharesAfter,
 		@JsonProperty("version") Long version) {
+
+	/**
+	 * 持股資料異常（時間線不合理、無法重算）時：只列出原始交易（id、日期、股數、價格、版本號），
+	 * 計算出來的欄位都是 null。使用者看得到每一筆，才能修改或刪除錯的那一筆（朋友回饋 1-1 a）。
+	 */
+	static TradeV2Response raw(Trade trade) {
+		return new TradeV2Response(
+				trade.getId(),
+				trade.getSide().name(),
+				trade.getTradeDate(),
+				trade.isDateEstimated(),
+				trade.getShares(),
+				Money.of(trade.getPrice()),
+				null, null, null, null, null, null,
+				trade.getVersion());
+	}
 
 	/**
 	 * @param trade 資料庫的交易（版本號、是否推估）

@@ -1,5 +1,6 @@
 package io.qiao.api;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -92,9 +93,15 @@ public class ApiExceptionHandler {
 	/** 2.0（v2）：賣超 → 409 OVERSELL，附哪一天、當時持有多少（C6-5 a），App 可以直接告訴使用者 */
 	@ExceptionHandler(OversellException.class)
 	public ResponseEntity<ApiErrorResponse> handleOversell(OversellException e) {
-		Map<String, Object> details = Map.of(
-				"trade_date", e.trade().tradeDate().toString(),
-				"held_before", e.heldBefore());
+		Map<String, Object> details = new LinkedHashMap<>();
+		details.put("trade_date", e.trade().tradeDate().toString());
+		details.put("held_before", e.heldBefore());
+		// 有推估日期的買進可能是原因（朋友回饋 2-1 a）：附上 id、日期、版本號，App 可以直接帶使用者去修改那筆買進
+		if (!e.estimatedBuys().isEmpty()) {
+			details.put("estimated_buys", e.estimatedBuys().stream()
+					.map(buy -> Map.of("id", buy.id(), "trade_date", buy.tradeDate().toString(), "version", buy.version()))
+					.toList());
+		}
 		return ResponseEntity.status(ApiErrorCode.OVERSELL.status())
 				.body(ApiErrorResponse.withDetails(ApiErrorCode.OVERSELL, e.getMessage(), details));
 	}

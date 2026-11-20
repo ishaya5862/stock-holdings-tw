@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import io.qiao.calculation.TradeLine;
 import io.qiao.calculation.TradeSide;
 import io.qiao.entity.Trade;
 import io.qiao.exception.StockNotFoundException;
@@ -100,11 +99,13 @@ public class ApiV2TradeController {
 	private TradeWriteResponse responseFor(String code, Long tradeId) {
 		PositionView view = positionQueryService.findByCode(code);
 		List<Trade> trades = view.trades();
-		List<TradeLine> lines = view.position().lines();
 		for (int i = 0; i < trades.size(); i++) {
 			if (trades.get(i).getId().equals(tradeId)) {
-				return new TradeWriteResponse(TradeV2Response.from(trades.get(i), lines.get(i)),
-						HoldingV2Response.from(view), false);
+				// 寫入前已整條驗證過，正常不會資料異常；萬一是（例如寫入後另一個裝置剛好改壞），只回原始交易
+				TradeV2Response trade = view.hasDataError()
+						? TradeV2Response.raw(trades.get(i))
+						: TradeV2Response.from(trades.get(i), view.position().lines().get(i));
+				return new TradeWriteResponse(trade, HoldingV2Response.from(view), false);
 			}
 		}
 		throw new TradeNotFoundException(tradeId); // 寫入後馬上被另一個裝置刪掉（極少見）

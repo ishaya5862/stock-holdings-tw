@@ -9,11 +9,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import io.qiao.calculation.OversellException;
 import io.qiao.calculation.PositionCalculator;
 import io.qiao.dto.HoldingListView;
 import io.qiao.dto.HoldingView;
@@ -46,6 +49,8 @@ import io.qiao.validation.StockCodes;
  */
 @Service
 public class HoldingService {
+
+	private static final Logger log = LoggerFactory.getLogger(HoldingService.class);
 
 	private final HoldingRepository holdingRepository;
 	private final TradeRepository tradeRepository;
@@ -86,7 +91,8 @@ public class HoldingService {
 		return holdings.stream()
 				.map(holding -> toView(holding, stocks.get(holding.getCode()),
 						tradesByHolding.getOrDefault(holding.getId(), List.of()), today))
-				.filter(view -> view.shares() > 0)
+				// 0 股的不顯示（C4-5）；資料異常的保留給第一版網頁顯示原因（v1 API 另外排除，1-2 a）
+				.filter(view -> view.shares() > 0 || view.hasDataError())
 				.toList();
 	}
 
@@ -102,14 +108,15 @@ public class HoldingService {
 	/**
 	 * 單一持股：App 的修改畫面用（GET /api/v1/holdings/{id}）、網頁修改頁用。
 	 *
-	 * @throws HoldingNotFoundException 找不到這筆持股，或已全部賣光（1.0 看不到 0 股的持股）
+	 * @throws HoldingNotFoundException 找不到這筆持股、已全部賣光（1.0 看不到 0 股的持股），
+	 *                                  或資料異常（1.0 不輸出這一檔，1-2 a；修改、刪除也因此擋下）
 	 */
 	@Transactional(readOnly = true)
 	public HoldingView findViewById(Long id) {
 		Holding holding = findById(id);
 		Stock stock = stockService.findByCodes(List.of(holding.getCode())).get(holding.getCode());
 		HoldingView view = toView(holding, stock, tradesOf(id), LocalDate.now(clock));
-		if (view.shares() == 0) {
+		if (view.shares() == 0 || view.hasDataError()) {
 			throw new HoldingNotFoundException(id);
 		}
 		return view;
@@ -179,7 +186,7 @@ public class HoldingService {
 		return transactionTemplate.execute(status -> {
 			// 鎖住後才判斷股數：避免同時有 2.0 的買進進來（C3，和交易服務同一套鎖）
 			Holding locked = holdingLock.byId(holding.getId(), () -> new HoldingNotFoundException(holding.getId()));
-			if (currentShares(locked.getId()) > 0) {
+			if (currentShares(locked) > 0) {
 				throw new DuplicateCodeException(locked.getCode());
 			}
 			tradeRepository.save(Trade.v1Buy(locked.getId(), lots, buyPrice, now));
@@ -235,18 +242,31 @@ public class HoldingService {
 	}
 
 	private HoldingView toView(Holding holding, Stock stock, List<Trade> trades, LocalDate today) {
-		return HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), trades,
+		HoldingView view = HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), trades,
 				positionCalculator, today);
+		if (view.hasDataError()) {
+			// 1-3 a：記錄錯誤 log（代號、持股 id、原因），維運人員才知道哪一檔需要修正
+			log.error("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), view.dataError());
+		}
+		return view;
 	}
 
 	private List<Trade> tradesOf(Long holdingId) {
 		return tradeRepository.findByHoldingIdOrderByTradeDateAscIdAsc(holdingId);
 	}
 
-	/** 目前股數（依交易重算；不需要收盤價） */
-	private long currentShares(Long holdingId) {
-		return positionCalculator.calculate("", tradesOf(holdingId).stream().map(Trade::toInput).toList(),
-				null, LocalDate.now(clock)).shares();
+	/**
+	 * 目前股數（依交易重算；不需要收盤價）。
+	 * 資料異常（時間線不合理）→ 1.0 不處理這一檔，請使用者用 2.0 修正（和修改、刪除相同的訊息）。
+	 */
+	private long currentShares(Holding holding) {
+		try {
+			return positionCalculator.calculate(holding.getCode(),
+					tradesOf(holding.getId()).stream().map(Trade::toInput).toList(), null, LocalDate.now(clock)).shares();
+		} catch (OversellException e) {
+			log.error("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), e.getMessage());
+			throw new UpgradeRequiredException(holding.getCode(), "新增", List.of("資料異常"));
+		}
 	}
 
 	/**

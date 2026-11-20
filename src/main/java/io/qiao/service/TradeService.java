@@ -13,6 +13,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import io.qiao.calculation.OversellException;
 import io.qiao.calculation.PositionCalculator;
 import io.qiao.calculation.PositionResult;
 import io.qiao.calculation.TradeInput;
@@ -169,7 +170,7 @@ public class TradeService {
 			BigDecimal price, LocalDateTime now) {
 		List<TradeInput> inputs = new ArrayList<>(inputsOf(holding.getId()));
 		inputs.add(new TradeInput(null, side, tradeDate, shares, price)); // 還沒存檔：排在同一天最後
-		calculate(holding, inputs); // 賣超 → OversellException，下面都不會執行
+		checkTimeline(holding, inputs); // 賣超 → OversellException，下面都不會執行
 
 		Trade trade = tradeRepository.saveAndFlush(Trade.create(holding.getId(), side, tradeDate, shares, price, now));
 		holding.setUpdatedAt(now); // 持股版本號 +1（C3-9）
@@ -197,7 +198,7 @@ public class TradeService {
 			List<TradeInput> inputs = new ArrayList<>(inputsOf(holding.getId()).stream()
 					.filter(input -> !input.id().equals(tradeId)).toList());
 			inputs.add(new TradeInput(tradeId, trade.getSide(), tradeDate, shares, price));
-			calculate(holding, inputs); // 改完會賣超 → 例外，交易紀錄不變
+			checkTimeline(holding, inputs); // 改完會賣超 → 例外，交易紀錄不變
 
 			trade.setTradeDate(tradeDate);
 			trade.setShares(shares);
@@ -231,7 +232,7 @@ public class TradeService {
 				quoteCache.remove(holding.getCode());
 				return new TradeResult(holding, null, null, true);
 			}
-			calculate(holding, remaining); // 刪掉後會賣超 → 例外，什麼都不刪
+			checkTimeline(holding, remaining); // 刪掉後會賣超 → 例外，什麼都不刪
 
 			tradeRepository.delete(trade);
 			holding.setUpdatedAt(now);
@@ -304,6 +305,28 @@ public class TradeService {
 	}
 
 	/** 重算（賣超會丟 OversellException）；有今天的收盤價（快取 OK）才算未實現損益 */
+	/**
+	 * 寫入前的驗證：依日期整條重算，任何時間點賣超就擋下（OversellException，什麼都不寫入）。
+	 *
+	 * 擋下時，如果這檔有「日期是推估的、而且晚於那筆賣出」的買進（1.0 轉入、App 1.0 新增時用記帳日代替），
+	 * 很可能是推估日期太晚造成的 → 錯誤訊息提示使用者先修改那筆買進的日期，並附上 id、版本號（朋友回饋 2-1 a）。
+	 * 不自動修改日期：系統不能替使用者猜真正的買進日（會讓平均成本、已實現損益算錯）。
+	 */
+	private void checkTimeline(Holding holding, List<TradeInput> inputs) {
+		try {
+			calculate(holding, inputs);
+		} catch (OversellException e) {
+			LocalDate oversoldDate = e.trade().tradeDate();
+			List<OversellException.EstimatedBuy> estimated = tradeRepository
+					.findByHoldingIdOrderByTradeDateAscIdAsc(holding.getId()).stream()
+					.filter(trade -> trade.getSide() == TradeSide.BUY && trade.isDateEstimated()
+							&& trade.getTradeDate().isAfter(oversoldDate))
+					.map(trade -> new OversellException.EstimatedBuy(trade.getId(), trade.getTradeDate(), trade.getVersion()))
+					.toList();
+			throw e.withEstimatedBuys(estimated);
+		}
+	}
+
 	private PositionResult calculate(Holding holding, List<TradeInput> inputs) {
 		return positionCalculator.calculate(holding.getCode(), inputs, closePrice(holding.getCode()),
 				LocalDate.now(clock));
