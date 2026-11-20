@@ -1,1 +1,31 @@
-/* 自訂樣式 */
+/* 自訂樣式（以 Bootstrap 5 為基礎，只補少量調整） */
+
+body {
+	background-color: #f3f5f8;
+}
+
+/* 頁首：深藍色 */
+.app-navbar {
+	background-color: #1f4e79;
+}
+
+/* 卡片：白底、細陰影、圓角 */
+.app-card {
+	border: none;
+	border-radius: 0.75rem;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* 數字用等寬數字，整欄對齊比較好讀 */
+.app-number {
+	font-variant-numeric: tabular-nums;
+}
+
+/* 台股慣例：紅色是賺、綠色是虧（第 4 題使用） */
+.text-profit {
+	color: #d32f2f;
+}
+
+.text-loss {
+	color: #2e7d32;
+}
