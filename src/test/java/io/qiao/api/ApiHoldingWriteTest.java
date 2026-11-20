@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -27,6 +28,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -128,7 +130,29 @@ class ApiHoldingWriteTest {
 				.andExpect(jsonPath("$.buy_price").value(980.50));
 	}
 
-	// ===== POST：張數錯誤 → 400 =====
+	// ===== POST：邊界值（剛好在範圍內要成功） =====
+
+	@ParameterizedTest
+	@CsvSource({ "1, 1000", "999, 1000", "1, 0.01", "1, 99999999.99" })
+	void 新增_邊界值剛好在範圍內_201(int lots, String buyPrice) throws Exception {
+		postJson("{\"code\":\"2330\",\"lots\":" + lots + ",\"buy_price\":" + buyPrice + "}")
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.lots").value(lots))
+				.andExpect(jsonPath("$.pnl").isNumber());
+	}
+
+	@Test
+	void 新增_最大金額_999張乘以買進價上限_盈虧仍是整數不溢位() throws Exception {
+		// 999 張 × 1,000 股 × 99,999,999.99 ≈ 1×10^14，long 上限約 9×10^18，不會溢位
+		MvcResult result = postJson("{\"code\":\"2330\",\"lots\":999,\"buy_price\":99999999.99}")
+				.andExpect(status().isCreated())
+				.andReturn();
+		// 直接看 JSON 原文：金額必須是整數寫法（沒有小數點、不是 1E+14 科學記號）
+		String body = result.getResponse().getContentAsString();
+		assertThat(body).containsPattern("\"pnl\":-\\d+,");
+		assertThat(body).contains("\"buy_price\":99999999.99,");
+		assertThat(body).doesNotContain("E+");
+	}
 
 	@ParameterizedTest
 	@ValueSource(strings = {
@@ -162,7 +186,7 @@ class ApiHoldingWriteTest {
 			"123456789" })          // 超過 8 位整數（資料表 DECIMAL(10,2)）
 	void 新增_買進價不對_400(String buyPrice) throws Exception {
 		expectError(postJson("{\"code\":\"2330\",\"lots\":1,\"buy_price\":" + buyPrice + "}"),
-				400, "VALIDATION_ERROR", "買進價必須是大於 0、最多兩位小數的數字");
+				400, "VALIDATION_ERROR", "買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字");
 		assertThat(holdingRepository.count()).isZero();
 	}
 
@@ -223,20 +247,20 @@ class ApiHoldingWriteTest {
 	@Test
 	void 新增_空物件_三個欄位都沒填_一次列出全部_順序固定() throws Exception {
 		expectError(postJson("{}"), 400, "VALIDATION_ERROR",
-				"請輸入股票代號；張數必須是 1～999 的整數；買進價必須是大於 0、最多兩位小數的數字");
+				"請輸入股票代號；張數必須是 1～999 的整數；買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字");
 	}
 
 	@Test
 	void 新增_張數和買進價都超出範圍_兩個錯誤合併成一句() throws Exception {
 		expectError(postJson("{\"code\":\"2330\",\"lots\":0,\"buy_price\":0}"), 400, "VALIDATION_ERROR",
-				"張數必須是 1～999 的整數；買進價必須是大於 0、最多兩位小數的數字");
+				"張數必須是 1～999 的整數；買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字");
 	}
 
 	@Test
 	void 新增_型別錯誤加上沒填_讀取JSON時就被擋_只回型別錯誤那一則() throws Exception {
 		// 型別錯誤（"abc"）在讀取 JSON 時就停止，還輪不到檢查「沒填」，這是技術上的限制
 		expectError(postJson("{\"code\":\"2330\",\"lots\":null,\"buy_price\":\"abc\"}"), 400, "VALIDATION_ERROR",
-				"買進價必須是大於 0、最多兩位小數的數字");
+				"買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字");
 	}
 
 	@ParameterizedTest
@@ -309,7 +333,7 @@ class ApiHoldingWriteTest {
 	void 修改_買進價三位小數_400() throws Exception {
 		Long id = holdingService.create("2330", 1, new BigDecimal("1000")).getId();
 
-		expectError(putJson(id, "{\"lots\":1,\"buy_price\":10.123}"), 400, "VALIDATION_ERROR", "買進價必須是大於 0、最多兩位小數的數字");
+		expectError(putJson(id, "{\"lots\":1,\"buy_price\":10.123}"), 400, "VALIDATION_ERROR", "買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字");
 	}
 
 	@Test

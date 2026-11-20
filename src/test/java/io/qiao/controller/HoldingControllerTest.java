@@ -282,6 +282,29 @@ class HoldingControllerTest {
 	}
 
 	@Test
+	void 買進價超過上限_訊息說明上限_不是只說兩位小數() throws Exception {
+		// 123456789 沒有小數，若只顯示「最多兩位小數」會誤導使用者
+		mockMvc.perform(post("/holdings").param("code", "2330").param("lots", "1").param("buyPrice", "123456789"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("最大 99,999,999.99")));
+		assertThat(holdingRepository.count()).isZero();
+	}
+
+	@Test
+	void 邊界值剛好在範圍內_999張與買進價上限_可以新增() throws Exception {
+		mockMvc.perform(post("/holdings").param("code", "2330").param("lots", "999").param("buyPrice", "99999999.99"))
+				.andExpect(redirectedUrl("/holdings"));
+		mockMvc.perform(post("/holdings").param("code", "0050").param("lots", "1").param("buyPrice", "0.01"))
+				.andExpect(redirectedUrl("/holdings"));
+		assertThat(holdingRepository.count()).isEqualTo(2);
+
+		// 清單頁要能正常顯示這麼大的金額（不會溢位或整頁錯誤）
+		mockMvc.perform(get("/holdings"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(containsString("99,999,999.99")));
+	}
+
+	@Test
 	void 買進價為0_顯示錯誤() throws Exception {
 		mockMvc.perform(post("/holdings").param("code", "2330").param("lots", "1").param("buyPrice", "0"))
 				.andExpect(status().isOk())

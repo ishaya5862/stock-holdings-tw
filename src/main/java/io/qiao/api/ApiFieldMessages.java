@@ -13,7 +13,7 @@ final class ApiFieldMessages {
 	/** 代號不是文字（例如送數字 2330 而不是字串 "2330"） */
 	static final String CODE_TYPE = "股票代號必須是文字，例如 \"2330\"";
 	static final String LOTS = "張數必須是 1～999 的整數";
-	static final String BUY_PRICE = "買進價必須是大於 0、最多兩位小數的數字";
+	static final String BUY_PRICE = "買進價必須是大於 0、最多兩位小數、不超過 99,999,999.99 的數字";
 	static final String MALFORMED = "請求內容格式不正確，必須是 JSON 物件";
 
 	/** JSON 欄位名稱 → 型別錯誤時的訊息（欄位名稱照規格用小寫加底線） */

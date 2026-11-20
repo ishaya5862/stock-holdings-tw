@@ -35,7 +35,7 @@ public class HoldingForm {
 	// 金額一律用 BigDecimal，避免 double 的誤差（例如 0.1 + 0.2 ≠ 0.3）
 	@NotNull(message = "請輸入買進價")
 	@DecimalMin(value = "0", inclusive = false, message = "買進價必須大於 0")
-	@Digits(integer = 8, fraction = 2, message = "買進價最多兩位小數")
+	@Digits(integer = 8, fraction = 2, message = "買進價最多兩位小數，最大 99,999,999.99")
 	private BigDecimal buyPrice;
 
 	public String getCode() {
