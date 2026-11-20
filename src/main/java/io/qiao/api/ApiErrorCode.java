@@ -33,6 +33,15 @@ public enum ApiErrorCode {
 	/** 2.0（v2）：目前沒有持有這個代號（從沒買過，或最後一筆交易已刪除） */
 	NOT_HELD(HttpStatus.NOT_FOUND),
 
+	/** 2.0（v2）：找不到這筆交易（可能已在另一個裝置刪除） */
+	TRADE_NOT_FOUND(HttpStatus.NOT_FOUND),
+
+	/** 2.0（v2）：賣超（某一天賣出的股數超過當時持有），附 trade_date、held_before（C6-5 a） */
+	OVERSELL(HttpStatus.CONFLICT),
+
+	/** 2.0（v2）：修改、刪除交易時版本號不符，另一個裝置已經改過（C3-5、C6-2 b） */
+	VERSION_CONFLICT(HttpStatus.CONFLICT),
+
 	/** 2.0：同一檔持股正在被另一個請求寫入，等鎖超過 3 秒（C3-2）；稍後再試即可 */
 	HOLDING_BUSY(HttpStatus.CONFLICT),
 

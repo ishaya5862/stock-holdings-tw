@@ -1,6 +1,7 @@
 package io.qiao.api;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -18,9 +19,14 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import com.fasterxml.jackson.databind.JsonMappingException;
 
+import io.qiao.api.v2.RequestFieldsException;
+import io.qiao.calculation.OversellException;
 import io.qiao.exception.DuplicateCodeException;
 import io.qiao.exception.HoldingBusyException;
 import io.qiao.exception.HoldingNotFoundException;
+import io.qiao.exception.InvalidTradeException;
+import io.qiao.exception.TradeNotFoundException;
+import io.qiao.exception.TradeVersionConflictException;
 import io.qiao.exception.NotHeldException;
 import io.qiao.exception.QuoteUnavailableException;
 import io.qiao.exception.StockNotFoundException;
@@ -66,6 +72,41 @@ public class ApiExceptionHandler {
 	@ExceptionHandler(UpgradeRequiredException.class)
 	public ResponseEntity<ApiErrorResponse> handleUpgradeRequired(UpgradeRequiredException e) {
 		return error(ApiErrorCode.UPGRADE_REQUIRED, e.getMessage());
+	}
+
+	/** 2.0（v2）：請求欄位格式錯誤 → 400，fields 標出每個錯誤欄位（C6-4 b），message 是合併的一句 */
+	@ExceptionHandler(RequestFieldsException.class)
+	public ResponseEntity<ApiErrorResponse> handleRequestFields(RequestFieldsException e) {
+		return ResponseEntity.status(ApiErrorCode.VALIDATION_ERROR.status())
+				.body(ApiErrorResponse.withFields(ApiErrorCode.VALIDATION_ERROR, e.getMessage(), e.fields()));
+	}
+
+	/** 2.0（v2）：股數、價格、日期不合規則（例如晚於今天、超過上限）→ 400，fields 標出是哪個欄位 */
+	@ExceptionHandler(InvalidTradeException.class)
+	public ResponseEntity<ApiErrorResponse> handleInvalidTrade(InvalidTradeException e) {
+		return ResponseEntity.status(ApiErrorCode.VALIDATION_ERROR.status())
+				.body(ApiErrorResponse.withFields(ApiErrorCode.VALIDATION_ERROR, e.getMessage(),
+						Map.of(e.field(), e.getMessage())));
+	}
+
+	/** 2.0（v2）：賣超 → 409 OVERSELL，附哪一天、當時持有多少（C6-5 a），App 可以直接告訴使用者 */
+	@ExceptionHandler(OversellException.class)
+	public ResponseEntity<ApiErrorResponse> handleOversell(OversellException e) {
+		Map<String, Object> details = Map.of(
+				"trade_date", e.trade().tradeDate().toString(),
+				"held_before", e.heldBefore());
+		return ResponseEntity.status(ApiErrorCode.OVERSELL.status())
+				.body(ApiErrorResponse.withDetails(ApiErrorCode.OVERSELL, e.getMessage(), details));
+	}
+
+	@ExceptionHandler(TradeNotFoundException.class)
+	public ResponseEntity<ApiErrorResponse> handleTradeNotFound(TradeNotFoundException e) {
+		return error(ApiErrorCode.TRADE_NOT_FOUND, e.getMessage());
+	}
+
+	@ExceptionHandler(TradeVersionConflictException.class)
+	public ResponseEntity<ApiErrorResponse> handleVersionConflict(TradeVersionConflictException e) {
+		return error(ApiErrorCode.VERSION_CONFLICT, e.getMessage());
 	}
 
 	/** 2.0（v2）：目前沒有持有這個代號 → 404 NOT_HELD（例：「目前沒有持有 2330」） */
