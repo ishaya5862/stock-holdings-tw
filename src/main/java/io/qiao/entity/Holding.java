@@ -22,7 +22,7 @@ import jakarta.persistence.Version;
  * 避免關閉 open-in-view 後在畫面上讀到未載入資料的錯誤（LazyInitializationException），查詢次數也固定。
  *
  * 手機與電腦同時操作（第 6 題 C3）：寫入交易前先用 SELECT … FOR UPDATE 鎖住這一列（悲觀鎖），同一檔的寫入一定排隊。
- * version（@Version）：這檔有任何交易異動都會更新 updatedAt，Hibernate 自動把版本 +1（C3-9），
+ * version（@Version）：這檔有任何交易異動都呼叫 touch() 更新 updatedAt，Hibernate 自動把版本 +1（C3-9），
  * 用戶端可以用它判斷「這檔資料變了沒」；因為一定先鎖再讀，不會發生版本衝突。
  */
 @Entity
@@ -75,6 +75,18 @@ public class Holding {
 
 	public void setUpdatedAt(LocalDateTime updatedAt) {
 		this.updatedAt = updatedAt;
+	}
+
+	/**
+	 * 標記「這檔有異動」：更新 updatedAt，讓 Hibernate 把版本號 +1（C3-9）。異動時一律用這個，不要直接 setUpdatedAt。
+	 *
+	 * 為什麼不直接 setUpdatedAt(now)（D-47）：Hibernate 只在欄位「真的變了」才寫入、版本號才 +1。
+	 * 兩次異動拿到同一個時間值時（同一個時鐘刻度；或資料庫只存到秒、新的時間剛好是整秒），值沒變 → 版本號不會 +1。
+	 * 所以新的時間沒有比原本晚時，就往後推 1 微秒，保證一定有變。
+	 * （不用 Hibernate 的 FORCE_INCREMENT 鎖：欄位本身也有變時會再加一次，變成一次 +2。）
+	 */
+	public void touch(LocalDateTime now) {
+		this.updatedAt = (updatedAt == null || now.isAfter(updatedAt)) ? now : updatedAt.plusNanos(1_000);
 	}
 
 	public Long getVersion() {

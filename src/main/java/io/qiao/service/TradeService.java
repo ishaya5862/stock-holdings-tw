@@ -131,7 +131,7 @@ public class TradeService {
 	 *
 	 * @throws io.qiao.exception.StockNotFoundException     上市、上櫃都查不到這個代號
 	 * @throws io.qiao.exception.QuoteUnavailableException 官方連不上，無法確認代號
-	 * @throws HoldingBusyException                        連續 3 次被其他裝置的建立、刪除打斷
+	 * @throws HoldingBusyException                        連續 3 次被另一個裝置的建立、刪除打斷
 	 */
 	public TradeResult buy(String code, LocalDate tradeDate, long shares, BigDecimal price) {
 		return buy(code, tradeDate, shares, price, null);
@@ -218,7 +218,8 @@ public class TradeService {
 				holding.setCreatedAt(now);
 				holding.setUpdatedAt(now);
 				// saveAndFlush：立刻寫入，讓 UNIQUE 限制的錯誤在這裡發生
-				return addTrade(holdingRepository.saveAndFlush(holding), TradeSide.BUY, tradeDate, shares, price, now);
+				// insertTrade（不是 addTrade）：剛建立的持股，建立本身就是版本 0，第一筆買進不再 +1（D-47）
+				return insertTrade(holdingRepository.saveAndFlush(holding), TradeSide.BUY, tradeDate, shares, price, now);
 			})));
 		} catch (DataIntegrityViolationException e) {
 			if (holdingRepository.findByCode(quote.code()).isPresent()) {
@@ -250,15 +251,22 @@ public class TradeService {
 				() -> addTrade(lockByCode(normalizedCode), TradeSide.SELL, tradeDate, shares, price, now))));
 	}
 
-	/** 在已鎖住的持股加一筆交易：先整條重算驗證（賣超就丟例外、不寫入），通過才寫入 */
+	/** 在已鎖住的持股加一筆交易，持股版本號 +1（C3-9） */
 	private TradeResult addTrade(Holding holding, TradeSide side, LocalDate tradeDate, long shares,
+			BigDecimal price, LocalDateTime now) {
+		TradeResult result = insertTrade(holding, side, tradeDate, shares, price, now);
+		holding.touch(now); // 持股版本號 +1（C3-9）；touch 保證時間相同時也會 +1（D-47）
+		return result;
+	}
+
+	/** 寫入一筆交易（不動持股版本號）：先整條重算驗證（賣超就丟例外、不寫入），通過才寫入 */
+	private TradeResult insertTrade(Holding holding, TradeSide side, LocalDate tradeDate, long shares,
 			BigDecimal price, LocalDateTime now) {
 		List<TradeInput> inputs = new ArrayList<>(inputsOf(holding.getId()));
 		inputs.add(new TradeInput(null, side, tradeDate, shares, price)); // 還沒存檔：排在同一天最後
 		checkTimeline(holding, inputs); // 賣超 → OversellException，下面都不會執行
 
 		Trade trade = tradeRepository.saveAndFlush(Trade.create(holding.getId(), side, tradeDate, shares, price, now));
-		holding.setUpdatedAt(now); // 持股版本號 +1（C3-9）
 		return new TradeResult(holding, trade, null, false);
 	}
 
@@ -295,7 +303,7 @@ public class TradeService {
 			trade.setShares(shares);
 			trade.setPrice(price);
 			trade.setUpdatedAt(now);
-			holding.setUpdatedAt(now);
+			holding.touch(now); // 持股版本號 +1（C3-9、D-47）
 			tradeRepository.flush(); // 立刻寫入：交易的版本號 +1，回傳的才是新版本
 			return new TradeResult(holding, trade, null, false);
 		})));
@@ -331,7 +339,7 @@ public class TradeService {
 			checkTimeline(holding, remaining); // 刪掉後會賣超 → 例外，什麼都不刪
 
 			tradeRepository.delete(trade);
-			holding.setUpdatedAt(now);
+			holding.touch(now); // 持股版本號 +1（C3-9、D-47）
 			return new TradeResult(holding, null, null, false);
 		}));
 		return result.holdingDeleted() ? result : recalculated(result);
