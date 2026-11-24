@@ -245,8 +245,9 @@ public class HoldingService {
 		HoldingView view = HoldingView.of(holding, stock, quoteCache.get(holding.getCode()).orElse(null), trades,
 				positionCalculator, today);
 		if (view.hasDataError()) {
-			// 1-3 a：記錄錯誤 log（代號、持股 id、原因），維運人員才知道哪一檔需要修正
-			log.error("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), view.dataError());
+			// 1-3 a：記錄 log（代號、持股 id、原因），維運人員才知道哪一檔需要修正。
+			// WARN：每次讀取都會記一次；需要告警的 ERROR 由 DataIntegrityChecker 每天彙總寫一筆（優化 #2）
+			log.warn("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), view.dataError());
 		}
 		return view;
 	}
@@ -264,7 +265,8 @@ public class HoldingService {
 			return positionCalculator.calculate(holding.getCode(),
 					tradesOf(holding.getId()).stream().map(Trade::toInput).toList(), null, LocalDate.now(clock)).shares();
 		} catch (OversellException e) {
-			log.error("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), e.getMessage());
+			// WARN：理由同 toView（告警由 DataIntegrityChecker 每天彙總）
+			log.warn("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), e.getMessage());
 			throw new UpgradeRequiredException(holding.getCode(), "新增", List.of("資料異常"));
 		}
 	}

@@ -114,8 +114,9 @@ public class PositionQueryService {
 			return new PositionView(holding, stock, status, quote, trades, position, null);
 		} catch (OversellException e) {
 			// 故障隔離（朋友回饋 1-1 a）：這一檔的交易時間線不合理（正常操作不會發生，例如直接改了資料庫），
-			// 只把這一檔標成「資料異常」，其他持股與總計照常計算；交易明細照樣列出，使用者才能修正錯的那一筆
-			log.error("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), e.getMessage());
+			// 只把這一檔標成「資料異常」，其他持股與總計照常計算；交易明細照樣列出，使用者才能修正錯的那一筆。
+			// WARN：每次讀取都會記一次；需要告警的 ERROR 由 DataIntegrityChecker 每天彙總寫一筆（優化 #2）
+			log.warn("持股資料異常，無法計算：代號 {}、持股 id {}、原因：{}", holding.getCode(), holding.getId(), e.getMessage());
 			return new PositionView(holding, stock, status, quote, trades, null, e.getMessage());
 		}
 	}
