@@ -113,7 +113,7 @@ class TradeConcurrencyTest {
 	}
 
 	@Test
-	void 等鎖超過3秒_回資料正在更新_不會一直等() throws Exception {
+	void 等鎖超過3秒_請使用者過幾秒再試_不會一直等() throws Exception {
 		tradeService.buy("2330", DAY, 1000, new BigDecimal("600.00"));
 		CountDownLatch locked = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
@@ -129,7 +129,7 @@ class TradeConcurrencyTest {
 		long startedAt = System.nanoTime();
 		assertThatThrownBy(() -> tradeService.sell("2330", DAY, 100, new BigDecimal("650.00")))
 				.isInstanceOf(HoldingBusyException.class)
-				.hasMessage("資料正在更新，請稍後再試");
+				.hasMessage("另一個裝置正在修改這一檔，請過幾秒再試一次");
 		Duration waited = Duration.ofNanos(System.nanoTime() - startedAt);
 
 		release.countDown();
