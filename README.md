@@ -123,6 +123,11 @@ mvnw.cmd test
 
 測試使用 H2 記憶體資料庫（MySQL 相容模式），**不需要開 Docker**，也不會連到證交所或櫃買中心。
 
+**有 Docker 時會多跑一組「真的 MySQL」測試**（`src/test/java/io/qiao/mysql/`）：鎖、交易隔離、死結的行為 H2 測不出來，
+這組測試用 [Testcontainers](https://testcontainers.com/) 自動開一個 `mysql:8.4` 容器（和 `docker-compose.yml` 同版本），測完自動刪除，
+不會動到開發用的資料庫。沒有 Docker（或 Docker Desktop 沒開）時，這組測試會顯示為略過（Skipped），其他測試照常執行。
+第一次執行要下載 MySQL 映像檔，會比較久。
+
 API 的測試在 `src/test/java/io/qiao/api/`（逐欄位檢查型別與 null、每種錯誤碼、App 1.0 實際會送出的格式如 `"1.5"`、`"abc"`、`null`）。
 
 2.0 網頁的前端檢查（股／張換算、價格、日期、週末與休市日提醒、錯誤處理）另有 JavaScript 測試 `src/test/js/v2-form-test.html`，

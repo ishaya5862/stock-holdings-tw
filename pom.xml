@@ -100,6 +100,30 @@
 			<scope>test</scope>
 		</dependency>
 
+		<!--
+			測試專用 Testcontainers：測試時用 Docker 自動開一個真的 MySQL（mysql:8.4，和 docker-compose.yml 相同），測完自動刪除。
+			為什麼需要：鎖、交易隔離、死結的行為 H2 測不出來（考試時兩個最嚴重的 bug 都是在真 MySQL 才發現）。
+			只用在 src/test/java/io/qiao/mysql/ 的測試；電腦沒有 Docker 時這些測試自動略過，其他測試照常用 H2。
+			- spring-boot-testcontainers：@ServiceConnection，自動把容器的連線資訊交給 Spring Boot
+			- junit-jupiter：@Testcontainers(disabledWithoutDocker = true)，沒有 Docker 時略過
+			- mysql：MySQLContainer
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>mysql</artifactId>
+			<scope>test</scope>
+		</dependency>
+
 	</dependencies>
 
 	<build>
