@@ -7,6 +7,6 @@ package io.qiao.exception;
 public class TradeNotFoundException extends RuntimeException {
 
 	public TradeNotFoundException(Long id) {
-		super("找不到這筆交易，可能已在其他裝置刪除");
+		super("找不到這筆交易，可能已在另一個裝置刪除");
 	}
 }

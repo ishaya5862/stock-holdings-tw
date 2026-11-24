@@ -317,7 +317,7 @@ class HoldingControllerTest {
 		for (String badCode : new String[] { "台積電", "233", "1234567", "A2330", "2330AB" }) {
 			mockMvc.perform(post("/holdings").param("code", badCode).param("lots", "1").param("buyPrice", "10"))
 					.andExpect(status().isOk())
-					.andExpect(content().string(containsString("股票代號為 4～6 位數字，最後可加 1 個英文字母")));
+					.andExpect(content().string(containsString("股票代號格式不正確（4～6 位數字，最後可加 1 個英文字母")));
 		}
 		assertThat(holdingRepository.count()).isZero();
 	}

@@ -222,7 +222,7 @@ class ApiV2WriteTest {
 				.content("{\"trade_date\":\"2026-03-02\",\"shares\":100,\"price\":\"600\",\"version\":" + (trade.getVersion() + 5) + "}"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("VERSION_CONFLICT"))
-				.andExpect(jsonPath("$.error.message").value("這筆交易已在其他裝置修改過，請重新整理後再操作"));
+				.andExpect(jsonPath("$.error.message").value("這筆交易已在另一個裝置修改過，請重新整理後再操作"));
 	}
 
 	@Test

@@ -37,14 +37,14 @@ class LockFailureHandlingTest {
 	private HoldingService holdingService;
 
 	@Test
-	void API_等鎖逾時_409請使用者過幾秒再試() throws Exception {
+	void API_等鎖逾時_409請使用者稍後再試() throws Exception {
 		when(positionQueryService.findAll()).thenThrow(new CannotAcquireLockException("Lock wait timeout exceeded"));
 
 		// 預期值寫成文字（不用常數）：訊息被不小心改掉時測試會抓到
 		mockMvc.perform(get("/api/v2/holdings"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("HOLDING_BUSY"))
-				.andExpect(jsonPath("$.error.message").value("另一個裝置正在修改這一檔，請過幾秒再試一次"));
+				.andExpect(jsonPath("$.error.message").value("另一個裝置正在修改這一檔，請稍後再試"));
 	}
 
 	@Test
@@ -53,6 +53,6 @@ class LockFailureHandlingTest {
 
 		mockMvc.perform(get("/holdings/{id}/edit", 1))
 				.andExpect(redirectedUrl("/holdings"))
-				.andExpect(flash().attribute("errorMessage", "另一個裝置正在修改這一檔，請過幾秒再試一次"));
+				.andExpect(flash().attribute("errorMessage", "另一個裝置正在修改這一檔，請稍後再試"));
 	}
 }

@@ -139,7 +139,7 @@ class MySqlLockTimeoutTest extends MySqlTestBase {
 	private static void expectBusy(ResultActions actions) throws Exception {
 		actions.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("HOLDING_BUSY"))
-				.andExpect(jsonPath("$.error.message").value("另一個裝置正在修改這一檔，請過幾秒再試一次"));
+				.andExpect(jsonPath("$.error.message").value("另一個裝置正在修改這一檔，請稍後再試"));
 	}
 
 	/** 等鎖上限 3 秒：不能太快（代表沒有真的等鎖），也不能接近 App 的 10 秒重送 */

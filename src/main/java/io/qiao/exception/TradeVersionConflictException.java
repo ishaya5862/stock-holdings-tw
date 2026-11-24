@@ -7,6 +7,6 @@ package io.qiao.exception;
 public class TradeVersionConflictException extends RuntimeException {
 
 	public TradeVersionConflictException(Long id) {
-		super("這筆交易已在其他裝置修改過，請重新整理後再操作");
+		super("這筆交易已在另一個裝置修改過，請重新整理後再操作");
 	}
 }
