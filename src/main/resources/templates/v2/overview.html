@@ -125,12 +125,20 @@
 							<td class="v2-num"><span th:replace="~{v2/fragments :: shortShares(${h.shares})}">600</span></td>
 							<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.averageCost})}">613.37</span></td>
 							<td class="v2-num"><th:block th:replace="~{v2/fragments :: closePrice(${h})}"></th:block></td>
-							<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.marketValue})}">390,000.00</span></td>
-							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}">
-								<span th:replace="~{v2/fragments :: shortSignedMoney(${h.unrealizedPnl})}">+20,252.25</span>
+							<!--/* 持有中卻取不到收盤價（D-50）：市值、未實現、收益率合成一格寫「無法計算」＋原因，不只顯示三個「—」。
+								已全部賣出（0 股）的「—」是「不適用」，維持原樣 */-->
+							<td th:if="${h.shares > 0 and h.marketValue == null}" colspan="3" class="v2-num text-muted">
+								無法計算
+								<div class="small" th:text="${@v2Formats.quoteMissingReason(h.quoteStatus)}">尚未取得收盤價</div>
 							</td>
-							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
-								th:text="${@v2Formats.signedPct(h.returnPct)}">+5.50%</td>
+							<th:block th:unless="${h.shares > 0 and h.marketValue == null}">
+								<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.marketValue})}">390,000.00</span></td>
+								<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}">
+									<span th:replace="~{v2/fragments :: shortSignedMoney(${h.unrealizedPnl})}">+20,252.25</span>
+								</td>
+								<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
+									th:text="${@v2Formats.signedPct(h.returnPct)}">+5.50%</td>
+							</th:block>
 							<!--/* 已實現收益率用小字放在金額下面；沒有賣出過就不顯示（避免每一列都多一個「—」） */-->
 							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}">
 								<span th:replace="~{v2/fragments :: shortSignedMoney(${h.realizedPnl})}">+16,706.75</span>

@@ -165,6 +165,14 @@ public class V2Formats {
 		return moneyFormat().format(yi) + " 億" + unit;
 	}
 
+	/**
+	 * 持有中卻算不出市值、損益時的原因（D-50）：用詞和第一版網頁（HoldingView.missingReason）相同。
+	 * 近期無成交 → 可能停止交易或下市；其他（更新中、官方連不上）→ 只是暫時還沒拿到。
+	 */
+	public String quoteMissingReason(String quoteStatus) {
+		return "NO_RECENT_TRADE".equals(quoteStatus) ? "近期無成交資料" : "尚未取得收盤價";
+	}
+
 	/** 市場別：TWSE → 上市、TPEX → 上櫃；還不知道 → — */
 	public String market(String market) {
 		if (market == null) {

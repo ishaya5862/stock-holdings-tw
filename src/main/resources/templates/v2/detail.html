@@ -58,7 +58,13 @@
 			<div class="col">
 				<div class="v2-stat">
 					<div class="v2-stat-label" title="假設用收盤價全部賣出，已扣賣出手續費與證交稅">未實現損益（已扣稅費）</div>
-					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(holding.unrealizedPnl)}">
+					<!--/* 持有中卻取不到收盤價（D-50）：寫「無法計算」＋原因，不只顯示「—」 */-->
+					<div th:if="${holding.shares > 0 and holding.unrealizedPnl == null}" class="v2-stat-value text-muted">
+						無法計算
+						<div class="small" th:text="${@v2Formats.quoteMissingReason(holding.quoteStatus)}">尚未取得收盤價</div>
+					</div>
+					<div th:unless="${holding.shares > 0 and holding.unrealizedPnl == null}"
+						class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(holding.unrealizedPnl)}">
 						<!--/* 摘要卡：完整金額＋單位「元」，不簡寫（優化 v2-number-display）；沒有值（—）時不加單位 */-->
 						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardSignedMoney(${holding.unrealizedPnl})}">+20,252.25</span><span th:if="${holding.unrealizedPnl != null}" class="v2-unit">元</span></span>
 						<small class="fs-6" th:text="${@v2Formats.signedPct(holding.returnPct)}">+5.50%</small>

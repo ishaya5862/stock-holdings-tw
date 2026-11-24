@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.qiao.calculation.TradeSide;
 import io.qiao.entity.Market;
 import io.qiao.entity.Trade;
+import io.qiao.quote.QuoteCache;
 import io.qiao.quote.StockLookupService;
 import io.qiao.quote.StockQuote;
 import io.qiao.repository.TradeRepository;
@@ -60,6 +61,9 @@ class V2PageControllerTest {
 
 	@Autowired
 	private Clock clock;
+
+	@Autowired
+	private QuoteCache quoteCache;
 
 	@MockitoBean
 	private StockLookupService stockLookupService;
@@ -157,6 +161,21 @@ class V2PageControllerTest {
 		Matcher matcher = Pattern.compile("<span[^>]*" + Pattern.quote(attribute) + "[^>]*>").matcher(html);
 		assertThat(matcher.find()).as("找不到 " + attribute).isTrue();
 		return matcher.group();
+	}
+
+	@Test
+	void 取不到收盤價_總覽與明細寫出無法計算與原因() throws Exception {
+		// D-50：原本市值、未實現、收益率只顯示三個「—」，看不出原因
+		buyAndSell2330();
+		quoteCache.putUnavailable("2330", LocalDateTime.of(2026, 11, 20, 14, 0)); // 官方連不上
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.containsString("colspan=\"3\"")))
+				.andExpect(content().string(Matchers.containsString("無法計算")))
+				.andExpect(content().string(Matchers.containsString("尚未取得收盤價")));
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.containsString("無法計算")))
+				.andExpect(content().string(Matchers.containsString("尚未取得收盤價")));
 	}
 
 	@Test

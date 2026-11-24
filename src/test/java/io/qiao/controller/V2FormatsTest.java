@@ -137,6 +137,14 @@ class V2FormatsTest {
 	}
 
 	@Test
+	void 取不到收盤價的原因_用詞和第一版網頁相同() {
+		// D-50：持有中卻沒有市值時，那一列顯示「無法計算」＋原因（原本只有「—」）
+		assertThat(formats.quoteMissingReason("NO_RECENT_TRADE")).isEqualTo("近期無成交資料");
+		assertThat(formats.quoteMissingReason("UNAVAILABLE")).isEqualTo("尚未取得收盤價");
+		assertThat(formats.quoteMissingReason("UPDATING")).isEqualTo("尚未取得收盤價");
+	}
+
+	@Test
 	void 市場別() {
 		assertThat(formats.market("TWSE")).isEqualTo("上市");
 		assertThat(formats.market("TPEX")).isEqualTo("上櫃");
