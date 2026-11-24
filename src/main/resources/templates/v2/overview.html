@@ -12,7 +12,8 @@
 	<main class="container py-4">
 		<div th:replace="~{v2/fragments :: flash}"></div>
 
-		<div class="d-flex align-items-center mb-3">
+		<!--/* flex-wrap：手機上標題和按鈕放不下時換行，不會被擠出畫面 */-->
+		<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
 			<h1 class="h4 mb-0 me-auto">持股總覽</h1>
 			<a class="btn btn-v2" th:href="@{/v2/buy}"><i class="bi bi-plus-lg me-1"></i>記一筆買進</a>
 		</div>
@@ -25,7 +26,9 @@
 		*/-->
 		<!--/* 摘要卡：顯示完整金額＋單位「元」，不簡寫（使用者要求；表格才簡寫，優化 v2-number-display） */-->
 		<div class="row g-3 mb-2" id="summary">
-			<div class="col">
+			<!--/* 手機版（D-51）：手機一排 1 張（col-12）、平板一排 2 張（col-md-6）、電腦一排（col-xl，和原本的 col 一樣：
+			金額太長放不下時自動換到下一排，D-44 使用者選擇維持；寫死 col-xl-3 會讓長金額超出卡片） */-->
+			<div class="col-12 col-md-6 col-xl">
 				<div class="v2-stat">
 					<div class="v2-stat-label">持有成本（含買進手續費）</div>
 					<div class="v2-stat-value v2-num text-start">
@@ -33,7 +36,7 @@
 					</div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-12 col-md-6 col-xl">
 				<div class="v2-stat">
 					<div class="v2-stat-label">市值</div>
 					<div class="v2-stat-value v2-num text-start">
@@ -41,7 +44,7 @@
 					</div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-12 col-md-6 col-xl">
 				<div class="v2-stat">
 					<div class="v2-stat-label" title="假設用收盤價全部賣出，已扣賣出手續費與證交稅">未實現損益（已扣稅費）</div>
 					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.unrealizedPnl)}">
@@ -50,7 +53,7 @@
 					</div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-12 col-md-6 col-xl">
 				<div class="v2-stat">
 					<!--/* 已實現收益率 = 已實現損益 ÷ 賣出部分的成本（優化 realized-return）；沒有賣出過為「—」 */-->
 					<div class="v2-stat-label" title="收益率 = 已實現損益 ÷ 賣出部分的成本（含買進手續費）">已實現損益（累計）</div>
@@ -91,7 +94,8 @@
 			<!--/* table-responsive（overflow-x: auto）：欄位放不下時表格底部出現左右捲軸；
 				外框 .v2-section 是 overflow: hidden（為了圓角），沒有這層的話超出的欄位會被直接裁掉、看不到（優化 v2-number-display） */-->
 			<div th:unless="${holdings.isEmpty()}" class="table-responsive">
-			<table class="table table-hover align-middle v2-table">
+			<!--/* v2-table-cards（D-51）：手機上每一列變成一張卡片，每格前面顯示 data-label（欄位名稱）；電腦、平板照舊是表格 */-->
+			<table class="table table-hover align-middle v2-table v2-table-cards">
 				<thead>
 					<tr>
 						<th class="ps-4">代號／名稱</th>
@@ -109,11 +113,12 @@
 				<tbody>
 					<tr th:each="h : ${holdings}" th:with="closed=${h.shares == 0}"
 						th:classappend="${closed} ? 'v2-closed'" th:attr="data-code=${h.code}">
-						<td class="ps-4">
+						<!--/* data-label：手機卡片上每格前面顯示的欄位名稱（v2.css 的 .v2-table-cards）；電腦上不顯示 */-->
+						<td class="ps-4 v2-card-title">
 							<strong th:text="${h.code}">2330</strong> <span th:text="${h.name}">台積電</span>
 							<span th:if="${closed}" class="badge text-bg-light border ms-1">已全部賣出</span>
 						</td>
-						<td th:text="${@v2Formats.market(h.market)}">上市</td>
+						<td data-label="市場" th:text="${@v2Formats.market(h.market)}">上市</td>
 
 						<!--/* 資料異常（交易時間線不合理，正常操作不會發生）：整列顯示原因，請到明細修正（朋友回饋 1-1 a） */-->
 						<td th:if="${h.dataError != null}" colspan="7" class="text-danger">
@@ -122,32 +127,32 @@
 
 						<th:block th:if="${h.dataError == null}">
 							<!--/* 股數與金額：≥ 100 萬簡寫（fragments 的 shortShares／shortMoney／shortSignedMoney） */-->
-							<td class="v2-num"><span th:replace="~{v2/fragments :: shortShares(${h.shares})}">600</span></td>
-							<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.averageCost})}">613.37</span></td>
-							<td class="v2-num"><th:block th:replace="~{v2/fragments :: closePrice(${h})}"></th:block></td>
+							<td class="v2-num" data-label="股數"><span th:replace="~{v2/fragments :: shortShares(${h.shares})}">600</span></td>
+							<td class="v2-num" data-label="平均成本"><span th:replace="~{v2/fragments :: shortMoney(${h.averageCost})}">613.37</span></td>
+							<td class="v2-num" data-label="收盤價"><th:block th:replace="~{v2/fragments :: closePrice(${h})}"></th:block></td>
 							<!--/* 持有中卻取不到收盤價（D-50）：市值、未實現、收益率合成一格寫「無法計算」＋原因，不只顯示三個「—」。
 								已全部賣出（0 股）的「—」是「不適用」，維持原樣 */-->
-							<td th:if="${h.shares > 0 and h.marketValue == null}" colspan="3" class="v2-num text-muted">
+							<td th:if="${h.shares > 0 and h.marketValue == null}" colspan="3" class="v2-num text-muted" data-label="市值、損益">
 								無法計算
 								<div class="small" th:text="${@v2Formats.quoteMissingReason(h.quoteStatus)}">尚未取得收盤價</div>
 							</td>
 							<th:block th:unless="${h.shares > 0 and h.marketValue == null}">
-								<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.marketValue})}">390,000.00</span></td>
-								<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}">
+								<td class="v2-num" data-label="市值"><span th:replace="~{v2/fragments :: shortMoney(${h.marketValue})}">390,000.00</span></td>
+								<td class="v2-num" data-label="未實現損益" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}">
 									<span th:replace="~{v2/fragments :: shortSignedMoney(${h.unrealizedPnl})}">+20,252.25</span>
 								</td>
-								<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
+								<td class="v2-num" data-label="收益率" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
 									th:text="${@v2Formats.signedPct(h.returnPct)}">+5.50%</td>
 							</th:block>
 							<!--/* 已實現收益率用小字放在金額下面；沒有賣出過就不顯示（避免每一列都多一個「—」） */-->
-							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}">
+							<td class="v2-num" data-label="已實現損益" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}">
 								<span th:replace="~{v2/fragments :: shortSignedMoney(${h.realizedPnl})}">+16,706.75</span>
 								<div th:if="${h.realizedReturnPct != null}" class="small"
 									th:text="${@v2Formats.signedPct(h.realizedReturnPct)}">+13.62%</div>
 							</td>
 						</th:block>
 
-						<td class="text-end pe-4">
+						<td class="text-end pe-4 v2-card-actions">
 							<a class="btn btn-sm btn-outline-danger" th:href="@{/v2/buy(code=${h.code})}">買進</a>
 							<!--/* 0 股或資料異常不能賣：不顯示賣出 */-->
 							<a th:if="${h.shares != null and h.shares > 0}" class="btn btn-sm btn-outline-success"

@@ -20,7 +20,7 @@
 		<noscript><div class="alert alert-danger">這一頁需要啟用 JavaScript 才能送出。</div></noscript>
 
 		<div class="row g-4">
-			<div class="col-8">
+			<div class="col-12 col-lg-8">
 				<div class="v2-section">
 					<!-- 送出中遮罩 -->
 					<div class="v2-submit-overlay d-none" role="status" aria-live="polite">
@@ -36,13 +36,13 @@
 							<div id="code-hint" class="form-text">輸入代號即可，系統會自動判斷上市或上櫃</div>
 						</div>
 						<div class="row g-3 mb-3">
-							<div class="col-3">
+							<div class="col-12 col-md-3">
 								<label for="date" class="form-label">買進日期</label>
 								<input id="date" type="date" class="form-control">
 								<div id="date-feedback" class="invalid-feedback"></div>
 								<div id="date-warning" class="form-text"></div>
 							</div>
-							<div class="col-5">
+							<div class="col-12 col-md-5">
 								<label for="quantity" class="form-label">數量</label>
 								<div class="input-group has-validation">
 									<input id="quantity" class="form-control text-end" inputmode="decimal" autocomplete="off" placeholder="例如 300">
@@ -55,7 +55,7 @@
 								</div>
 								<div id="quantity-hint" class="form-text"></div>
 							</div>
-							<div class="col-4">
+							<div class="col-12 col-md-4">
 								<label for="price" class="form-label">每股價格</label>
 								<div class="input-group has-validation">
 									<input id="price" class="form-control text-end" inputmode="decimal" autocomplete="off" placeholder="例如 600.50">
@@ -73,7 +73,7 @@
 			</div>
 
 			<!-- 右側：試算（只顯示，不送出；實際數字以伺服器重算為準） -->
-			<div class="col-4">
+			<div class="col-12 col-lg-4">
 				<div class="v2-section">
 					<div class="v2-section-header">試算</div>
 					<div class="p-3 v2-calc">

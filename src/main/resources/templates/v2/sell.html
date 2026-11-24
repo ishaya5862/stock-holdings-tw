@@ -22,7 +22,7 @@
 		<noscript><div class="alert alert-danger">這一頁需要啟用 JavaScript 才能送出。</div></noscript>
 
 		<div class="row g-4">
-			<div class="col-8">
+			<div class="col-12 col-lg-8">
 				<!-- 目前持有（只顯示）：灰底；被另一個裝置改過時會重新讀取 -->
 				<div class="v2-info mb-3 d-flex align-items-center">
 					<div class="me-4">持有 <strong class="fs-5" id="held-shares"></strong> 股</div>
@@ -38,13 +38,13 @@
 					</div>
 					<form id="sell-form" class="p-4" novalidate>
 						<div class="row g-3 mb-3">
-							<div class="col-3">
+							<div class="col-12 col-md-3">
 								<label for="date" class="form-label">賣出日期</label>
 								<input id="date" type="date" class="form-control">
 								<div id="date-feedback" class="invalid-feedback"></div>
 								<div id="date-warning" class="form-text"></div>
 							</div>
-							<div class="col-5">
+							<div class="col-12 col-md-5">
 								<label for="quantity" class="form-label d-flex">
 									<span class="me-auto">數量</span>
 									<a href="#" id="sell-all" class="small text-decoration-none">全部賣出</a>
@@ -59,7 +59,7 @@
 								</div>
 								<div id="quantity-hint" class="form-text"></div>
 							</div>
-							<div class="col-4">
+							<div class="col-12 col-md-4">
 								<label for="price" class="form-label">每股價格</label>
 								<div class="input-group has-validation">
 									<input id="price" class="form-control text-end" inputmode="decimal" autocomplete="off">
@@ -76,7 +76,7 @@
 				</div>
 			</div>
 
-			<div class="col-4">
+			<div class="col-12 col-lg-4">
 				<div class="v2-section">
 					<div class="v2-section-header">試算</div>
 					<div class="p-3 v2-calc">

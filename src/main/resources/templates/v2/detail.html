@@ -16,7 +16,7 @@
 		<div id="page-alert" class="d-none" role="alert"></div>
 
 		<div class="mb-2"><a th:href="@{/v2}"><i class="bi bi-arrow-left me-1"></i>回持股總覽</a></div>
-		<div class="d-flex align-items-center mb-3">
+		<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
 			<h1 class="h4 mb-0 me-auto">
 				<span th:text="${holding.code}">2330</span> <span th:text="${holding.name}">台積電</span>
 				<small class="text-secondary fs-6 ms-1" th:text="${@v2Formats.market(holding.market)}">上市</small>
@@ -34,14 +34,14 @@
 		</div>
 
 		<div th:if="${holding.dataError == null}" class="row g-3 mb-4" id="position">
-			<div class="col">
+			<div class="col-6 col-md-4 col-xl">
 				<div class="v2-stat">
 					<div class="v2-stat-label">持有股數</div>
 					<div class="v2-stat-value v2-num text-start" th:text="${@v2Formats.shares(holding.shares)}">600</div>
 					<div class="small text-secondary" th:text="${@v2Formats.lots(holding.shares)}">600 股（零股）</div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-6 col-md-4 col-xl">
 				<div class="v2-stat">
 					<!--/* 標題縮短避免換行；完整說明放在滑鼠提示（和未實現損益卡相同做法） */-->
 					<div class="v2-stat-label" title="持有成本 ÷ 持有股數；成本含買進手續費">平均成本（含手續費）</div>
@@ -49,13 +49,13 @@
 					<div class="small text-secondary">持有成本 <span th:text="${@v2Formats.money(holding.totalCost)}">368,022.75</span></div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-12 col-md-4 col-xl">
 				<div class="v2-stat">
 					<div class="v2-stat-label">收盤價</div>
 					<div class="v2-stat-value v2-num text-start"><th:block th:replace="~{v2/fragments :: closePrice(${holding})}"></th:block></div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-12 col-md-6 col-xl">
 				<div class="v2-stat">
 					<div class="v2-stat-label" title="假設用收盤價全部賣出，已扣賣出手續費與證交稅">未實現損益（已扣稅費）</div>
 					<!--/* 持有中卻取不到收盤價（D-50）：寫「無法計算」＋原因，不只顯示「—」 */-->
@@ -71,7 +71,7 @@
 					</div>
 				</div>
 			</div>
-			<div class="col">
+			<div class="col-12 col-md-6 col-xl">
 				<div class="v2-stat">
 					<!--/* 已實現收益率 = 歷次賣出的已實現損益 ÷ 分攤成本（優化 realized-return）；沒有賣出過為「—」 */-->
 					<div class="v2-stat-label" title="收益率 = 已實現損益 ÷ 賣出部分的成本（含買進手續費）">已實現損益（累計）</div>
@@ -87,7 +87,8 @@
 			<div class="v2-section-header">交易明細</div>
 			<!--/* 放不下時出現左右捲軸（同總覽，優化 v2-number-display） */-->
 			<div class="table-responsive">
-			<table class="table align-middle v2-table">
+			<!--/* v2-table-cards（D-51）：手機上每一筆交易變成一張卡片（同總覽）；data-label 是卡片上的欄位名稱 */-->
+			<table class="table align-middle v2-table v2-table-cards">
 				<thead>
 					<tr>
 						<th class="ps-4">日期</th>
@@ -112,30 +113,41 @@
 						th:with="deleteText=${(t.side == 'BUY' ? '買進' : '賣出') + ' ' + holding.code + ' ' + (holding.name ?: '') + ' '
 							+ @v2Formats.shares(t.shares) + ' 股 × ' + @v2Formats.money(t.price) + ' 元（'
 							+ #temporals.format(t.tradeDate, 'yyyy-MM-dd') + '）'}">
-						<td class="ps-4">
+						<td class="ps-4 v2-card-title">
 							<span th:text="${t.tradeDate}">2026-03-02</span>
 							<!--/* 1.0 轉入、App 1.0 新增時沒有買進日期，用記帳日代替（D3）→ 標示，請使用者確認 */-->
 							<span th:if="${t.dateEstimated}" class="v2-estimated ms-1"
 								title="1.0 沒有買進日期，這是當初記帳的日期；請按「修改」改成實際買進日期">推估</span>
+							<!--/*
+								「?」說明（D-52）：點一下跳出說明框（Bootstrap Popover，v2-page.js 啟動），點別處關閉。
+								用 <a tabindex="0">、不用 <button>：Bootstrap 文件說明「點別處關閉（trigger focus）」要這樣寫，
+								iPhone Safari 點按鈕不會取得焦點，說明框會打不開。
+								說明框加在頁面最外層，不會被表格的左右捲動區塊切掉。
+							*/-->
+							<a th:if="${t.dateEstimated}" tabindex="0" role="button" class="v2-help"
+								data-bs-toggle="popover" data-bs-trigger="focus" data-bs-placement="top"
+								data-bs-title="日期是推估的"
+								data-bs-content="這是 1.0 時期的舊資料，當時沒有記錄買進日期，系統先用當初記帳的日期代替。請按「修改」改成實際的買進日期，平均成本與已實現損益才會依正確的順序計算。"
+								aria-label="「推估」是什麼意思？">?</a>
 						</td>
-						<td>
+						<td data-label="買賣">
 							<span th:if="${t.side == 'BUY'}" class="v2-side v2-side-buy">買進</span>
 							<span th:if="${t.side == 'SELL'}" class="v2-side v2-side-sell">賣出</span>
 						</td>
 						<!--/* 股數與金額（含手續費、證交稅、已實現損益）：≥ 100 萬簡寫，滑鼠移上去或點一下看完整數字（優化 v2-number-display） */-->
-						<td class="v2-num"><span th:replace="~{v2/fragments :: shortShares(${t.shares})}">300</span></td>
-						<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${t.price})}">600.00</span></td>
-						<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${t.amount})}">180,000.00</span></td>
-						<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${t.fee})}">256.00</span></td>
-						<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${t.tax})}">—</span></td>
+						<td class="v2-num" data-label="股數"><span th:replace="~{v2/fragments :: shortShares(${t.shares})}">300</span></td>
+						<td class="v2-num" data-label="價格"><span th:replace="~{v2/fragments :: shortMoney(${t.price})}">600.00</span></td>
+						<td class="v2-num" data-label="成交金額"><span th:replace="~{v2/fragments :: shortMoney(${t.amount})}">180,000.00</span></td>
+						<td class="v2-num" data-label="手續費"><span th:replace="~{v2/fragments :: shortMoney(${t.fee})}">256.00</span></td>
+						<td class="v2-num" data-label="證交稅"><span th:replace="~{v2/fragments :: shortMoney(${t.tax})}">—</span></td>
 						<!--/* 賣出那一列：已實現損益下面用小字顯示這次的收益率（買進沒有） */-->
-						<td class="v2-num" th:classappend="${@v2Formats.pnlClass(t.realizedPnl)}">
+						<td class="v2-num" data-label="已實現損益" th:classappend="${@v2Formats.pnlClass(t.realizedPnl)}">
 							<span th:replace="~{v2/fragments :: shortSignedMoney(${t.realizedPnl})}">—</span>
 							<div th:if="${t.realizedReturnPct != null}" class="small"
 								th:text="${@v2Formats.signedPct(t.realizedReturnPct)}">+13.62%</div>
 						</td>
-						<td class="v2-num"><span th:replace="~{v2/fragments :: shortShares(${t.sharesAfter})}">300</span></td>
-						<td class="text-end pe-4">
+						<td class="v2-num" data-label="交易後股數"><span th:replace="~{v2/fragments :: shortShares(${t.sharesAfter})}">300</span></td>
+						<td class="text-end pe-4 v2-card-actions">
 							<!--/* 修改、刪除用按鈕（D-48，原本是文字連結）：和總覽的買進／賣出／明細按鈕一致，比較好點 */-->
 							<a class="btn btn-sm btn-outline-secondary me-1" th:href="@{/v2/trades/{id}/edit(id=${t.id})}">修改</a>
 							<!--/* 刪除：確認後由 v2-trade-delete.js 呼叫 DELETE /api/v2/trades/{id}?version=（C9） */-->

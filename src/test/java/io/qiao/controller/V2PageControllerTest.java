@@ -179,6 +179,25 @@ class V2PageControllerTest {
 	}
 
 	@Test
+	void 手機版_表格有卡片模式與欄位名稱_頁首有折疊選單() throws Exception {
+		// D-51：手機上表格變卡片（v2-table-cards＋每格 data-label）；頁首在窄螢幕收成「☰」
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.containsString("v2-table-cards")))
+				.andExpect(content().string(Matchers.containsString("data-label=\"市值\"")))
+				.andExpect(content().string(Matchers.containsString("data-label=\"已實現損益\"")))
+				.andExpect(content().string(Matchers.containsString("navbar-toggler")))
+				.andExpect(content().string(Matchers.containsString("col-12 col-md-6 col-xl")));
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.containsString("v2-table-cards")))
+				.andExpect(content().string(Matchers.containsString("data-label=\"手續費\"")))
+				.andExpect(content().string(Matchers.containsString("v2-card-actions")));
+		mockMvc.perform(get("/v2/buy"))
+				.andExpect(content().string(Matchers.containsString("col-12 col-lg-8")));
+	}
+
+	@Test
 	void 換頁時的紅色提示_開頭加錯誤() throws Exception {
 		// D-49：和表單的紅色錯誤框一致，開頭是粗體「錯誤！」
 		mockMvc.perform(get("/v2").flashAttr("errorMessage", "2330 目前沒有持股（已全部賣出），不能賣出"))
@@ -300,7 +319,19 @@ class V2PageControllerTest {
 
 		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("v2-estimated")));
+				.andExpect(content().string(Matchers.containsString("v2-estimated")))
+				// D-52：旁邊的「?」點一下跳出說明（Bootstrap Popover，點別處關閉）
+				.andExpect(content().string(Matchers.containsString("data-bs-toggle=\"popover\"")))
+				.andExpect(content().string(Matchers.containsString("data-bs-trigger=\"focus\"")))
+				.andExpect(content().string(Matchers.containsString("這是 1.0 時期的舊資料，當時沒有記錄買進日期")));
+	}
+
+	@Test
+	void 明細_日期不是推估的交易_沒有問號() throws Exception {
+		buyAndSell2330(); // 2.0 記的交易都有實際日期
+
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("data-bs-toggle=\"popover\""))));
 	}
 
 	@Test

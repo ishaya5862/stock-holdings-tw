@@ -19,7 +19,12 @@
 
 <body>
 
-	<nav th:fragment="navbar(active)" class="navbar navbar-expand v2-navbar">
+	<!--/*
+		手機版（D-51）：navbar-expand-lg → 寬度 ≥ 992px 時維持一排；比較窄時右邊出現「☰」按鈕，
+		選單、第一版網頁、台北時間收進折疊區（Bootstrap 的 collapse），不會被擠出畫面。
+	*/-->
+	<!--/* data-bs-theme="dark"：頁首是深色底，讓「☰」圖示用淺色（Bootstrap 5.3） */-->
+	<nav th:fragment="navbar(active)" class="navbar navbar-expand-lg v2-navbar" data-bs-theme="dark">
 		<div class="container">
 			<a class="navbar-brand fw-bold" th:href="@{/v2}">
 				<!--/* Logo L2：帳本＋上升箭頭（內嵌 SVG，顏色跟著 v2.css 的變數；2026-11-20 使用者選定） */-->
@@ -30,19 +35,25 @@
 					<polyline points="22,11 26,11 26,15" fill="none" stroke="var(--v2-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
 				</svg>持股記帳<span class="v2-version">2.0</span>
 			</a>
-			<ul class="navbar-nav me-auto ms-4">
+			<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#v2-nav"
+				aria-controls="v2-nav" aria-expanded="false" aria-label="開啟選單">
+				<span class="navbar-toggler-icon"></span>
+			</button>
+			<div class="collapse navbar-collapse" id="v2-nav">
+			<ul class="navbar-nav me-auto ms-lg-4">
 				<li class="nav-item">
 					<a class="nav-link" th:classappend="${active == 'overview'} ? 'active'" th:href="@{/v2}">持股總覽</a>
 				</li>
 			</ul>
 			<!--/* 第一版網頁照舊保留（C8-2 a），從這裡也能回去 */-->
 			<!--/* 放在 navbar-nav 裡：頁首的連結顏色由 Bootstrap 變數決定，放在外面會變成深色字、在墨黑底上看不到 */-->
-			<ul class="navbar-nav me-3">
+			<ul class="navbar-nav me-lg-3">
 				<li class="nav-item"><a class="nav-link small" th:href="@{/holdings}">第一版網頁</a></li>
 			</ul>
 			<span class="navbar-text small">
 				<i class="bi bi-clock me-1"></i><span th:text="${now}">2026-11-20 09:00:00</span>（台北時間）
 			</span>
+			</div>
 		</div>
 	</nav>
 
