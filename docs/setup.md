@@ -12,6 +12,7 @@
   - `idempotency_keys`（防止重送，2.0）：App 2.0 寫入時帶的 `Idempotency-Key`，保存 24 小時。
   - `holdings.code` → `stocks.code`、`trades.holding_id` → `holdings.id` 外鍵。
 - 資料存在 Docker volume，關掉程式、重開電腦資料都還在。要清空資料：`docker compose down -v`。
+- 用 `mvnw spring-boot:run` 啟動和用 Docker 啟動（`docker compose --profile app up`，見 README）用的是同一個 MySQL 容器與 volume，資料是同一份；清空資料時兩邊一起清空。用 Docker 啟動時，程式容器裡關掉了 Spring Boot 的 Docker Compose 自動整合（`SPRING_DOCKER_COMPOSE_ENABLED=false`），改用 `DB_HOST=mysql` 連到同一個 compose 裡的 MySQL。
 - 電腦這端的埠號由 Docker 自動挑選（避免和已安裝的 MySQL 或 Windows 保留埠衝突）。要用資料庫工具連線時，先查實際埠號：
   ```bash
   docker compose port mysql 3306

@@ -10,7 +10,7 @@
 
 | 軟體 | 版本 | 說明 |
 |---|---|---|
-| JDK | **17 以上**（17、21、25 皆可） | 執行 `java -version` 確認 |
+| JDK | **17 以上**（17、21、25 皆可） | 執行 `java -version` 確認；[用 Docker 啟動](#用-docker-啟動不需要安裝-jdk)時不需要 |
 | Docker Desktop | 任一近期版本 | 用來啟動 MySQL；**啟動程式前請先打開 Docker Desktop** |
 
 不需要另外安裝 Maven（專案內附 Maven Wrapper），也不需要自己安裝或設定 MySQL。
@@ -42,6 +42,21 @@ mvnw.cmd spring-boot:run
 停止：在終端機按 `Ctrl + C`（MySQL 容器也會一併停止，資料保留）。
 
 用 jar 執行、改連自己的 MySQL、密碼設定，見 [docs/setup.md](docs/setup.md)。
+
+## 用 Docker 啟動（不需要安裝 JDK）
+
+電腦只要有 Docker Desktop，在專案根目錄執行（各種終端機都一樣）：
+
+```bash
+docker compose --profile app up --build
+```
+
+- 會在 Docker 裡用 Java 17 編譯程式，再和 MySQL 一起啟動。第一次要下載映像檔與套件，約需 1～5 分鐘（看網路速度）；之後有快取，會快很多。
+- 看到 `Started StockHoldingsApplication` 後，一樣打開 **http://localhost:8080** 。
+- 停止：按 `Ctrl + C`。在背景執行：加 `-d`（`docker compose --profile app up --build -d`），停止時執行 `docker compose --profile app stop`。
+- 8080 被占用時換埠號：`APP_PORT=8081 docker compose --profile app up --build`（Windows PowerShell：先執行 `$env:APP_PORT="8081"`）。
+- 更換官方網址的環境變數（見下方）一樣有效。
+- 和上面的 `mvnw spring-boot:run` 用的是**同一個資料庫**（同一份資料）；兩種方式不要同時啟動。
 
 ## 網址
 
