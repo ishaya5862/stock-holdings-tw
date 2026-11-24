@@ -45,6 +45,8 @@ import jakarta.servlet.http.HttpServletRequest;
  * 只讀資料庫與行情快取，開頁不會向官方查詢（題目第 3 題要求 3）。
  *
  * 第一版網頁 /holdings 照舊保留（C8-2 a），路徑分開，不影響舊書籤與 App 1.0。
+ *
+ * 對話框（D-53）：買進、賣出、修改加上 ?dialog=1 時只回表單片段，總覽、明細頁把它放進對話框（v2-forms.js），不用換頁。
  */
 @Controller
 @RequestMapping("/v2")
@@ -91,17 +93,19 @@ public class V2PageController {
 	 * 目前持股的股數與成本放進頁面，輸入代號時顯示「目前持有」與買進後的平均成本試算（只是試算，以伺服器為準）。
 	 */
 	@GetMapping("/buy")
-	public String buyForm(@RequestParam(required = false) String code, Model model) {
+	public String buyForm(@RequestParam(required = false) String code,
+			@RequestParam(defaultValue = "false") boolean dialog, Model model) {
 		List<HoldingV2Response> holdings = positionQueryService.findAll().stream().map(HoldingV2Response::from).toList();
 		model.addAttribute("fixedCode", code == null || code.isBlank() ? null : StockCodes.normalize(code));
 		model.addAttribute("heldByCode", heldByCode(holdings));
 		addCalendar(model);
-		return "v2/buy";
+		return view("v2/buy", dialog);
 	}
 
 	/** 賣出頁（/v2/sell?code=2330）：只能賣目前持有的（0 股或資料異常 → 回總覽並說明） */
 	@GetMapping("/sell")
-	public String sellForm(@RequestParam(required = false) String code, Model model, HttpServletRequest request) {
+	public String sellForm(@RequestParam(required = false) String code,
+			@RequestParam(defaultValue = "false") boolean dialog, Model model, HttpServletRequest request) {
 		HoldingV2Response holding = HoldingV2Response.from(positionQueryService.findByCode(code == null ? "" : code));
 		if (holding.dataError() != null) {
 			return redirectWithError(request, holding.code() + " 的交易資料異常，請先到明細修正：" + holding.dataError());
@@ -112,12 +116,12 @@ public class V2PageController {
 		model.addAttribute("holding", holding);
 		model.addAttribute("held", heldInfo(holding));
 		addCalendar(model);
-		return "v2/sell";
+		return view("v2/sell", dialog);
 	}
 
-	/** 修改一筆交易（C8-4 a 獨立頁面）：日期、股數、價格可以改，買或賣不能改（C6）；版本號放在頁面，送出時帶上 */
+	/** 修改一筆交易（C8-4 a 獨立頁面；D-53 起明細頁用對話框打開）：日期、股數、價格可以改，買或賣不能改（C6）；版本號放在頁面，送出時帶上 */
 	@GetMapping("/trades/{id}/edit")
-	public String editForm(@PathVariable Long id, Model model) {
+	public String editForm(@PathVariable Long id, @RequestParam(defaultValue = "false") boolean dialog, Model model) {
 		PositionView view = positionQueryService.findByTradeId(id);
 		TradeV2Response trade = TradeV2Response.listOf(view).stream()
 				.filter(t -> t.id().equals(id))
@@ -126,7 +130,15 @@ public class V2PageController {
 		model.addAttribute("holding", HoldingV2Response.from(view));
 		model.addAttribute("trade", trade);
 		addCalendar(model);
-		return "v2/edit";
+		return view("v2/edit", dialog);
+	}
+
+	/**
+	 * 對話框（D-53）：總覽、明細的買進／賣出／修改用 ?dialog=1 拿「只有表單」的片段（頁面裡 th:fragment="dialog" 那一段），
+	 * 放進對話框；沒有 dialog 時是完整頁面。兩者是同一份樣板，表單只有一份。
+	 */
+	private static String view(String template, boolean dialog) {
+		return dialog ? template + " :: dialog" : template;
 	}
 
 	/** 目前持有（0 股與資料異常除外）：代號 → 名稱、股數、持有成本（給買進頁試算） */

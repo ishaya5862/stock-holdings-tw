@@ -1,6 +1,7 @@
 /* ==========================================================
  * v2.css：持股記帳 2.0 新網頁專用樣式（第 6 題 C8；由 2026-11-20 預覽版 qiao/preview-v2/v2.css 正式寫入）
- * 以 Bootstrap 5 為基礎（S4），配色 T1 墨黑＋金、Logo L2；只做電腦版。第一版 style.css 不動。
+ * 以 Bootstrap 5 為基礎（S4），配色 T1 墨黑＋金、Logo L2。第一版 style.css 不動。
+ * 手機版（D-51）：手機 < 768px、平板 768～1199px、電腦 ≥ 1200px（電腦和原本相同）；手機的樣式集中在檔案最後。
  * ========================================================== */
 
 /* 配色 T1：墨黑＋金（2026-11-20 使用者選定） */
@@ -19,8 +20,7 @@
 
 body {
 	background-color: var(--v2-page-bg);
-	/* 只做電腦版：小於 1100px 出現水平捲軸，不重新排版 */
-	min-width: 1100px;
+	/* 原本「只做電腦版」設了 min-width: 1100px（手機上整頁要左右滑）；D-51 改成依螢幕寬度排版，拿掉 */
 }
 
 /* ---------- 頁首 ---------- */
@@ -177,6 +177,140 @@ body {
 	color: #b7791f;
 }
 
+/* ---------- 標籤（D-54） ---------- */
+
+/*
+ * 市場別（主色調）：上市＝金黃底、墨黑字（D-57 使用者指定，和頁首「2.0」標記同一組顏色）；上櫃＝淡金底、深金色字、金色框。
+ * 刻意不用紅綠，避免和「賺、賠」的顏色混淆。
+ */
+.v2-market {
+	display: inline-block;
+	white-space: nowrap;
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	padding: 0.15rem 0.6rem;
+	border-radius: 0.3rem;
+	border: 1px solid transparent;
+}
+
+.v2-market-twse { background-color: var(--v2-accent); color: var(--v2-accent-text); border-color: var(--v2-accent); }
+.v2-market-tpex { background-color: #fbf3dc; color: #8a6508; border-color: var(--v2-accent); }
+
+/* 表格置中（D-55）：總覽持股表的市場～操作，標題與數值都置中。
+   不用 Bootstrap 的 text-center：它是 !important，手機卡片模式沒辦法改回靠右 */
+.v2-table .v2-center {
+	text-align: center;
+}
+
+/* 確認對話框（D-55）：內容裡的換行要顯示出來 */
+.v2-confirm-body {
+	white-space: pre-line;
+}
+
+/* 確認對話框裡「要刪哪一筆」另外框起來（D-56），和下面的說明分開 */
+.v2-confirm-target {
+	display: block;
+	margin-bottom: 0.75rem;
+	padding: 0.6rem 0.9rem;
+	border-left: 4px solid var(--v2-accent);
+	border-radius: 0.25rem;
+	background-color: var(--v2-panel-bg);
+	font-weight: 600;
+	white-space: normal;
+}
+
+/* 頁首的台北時間（D-56）：電腦上一行；平板以下分兩行（檔案最後的 @media） */
+.v2-clock {
+	display: inline-flex;
+	gap: 0.4rem;
+	white-space: nowrap;
+}
+
+/* 買進、賣出、修改的對話框寬度（D-56）：介於 modal-lg（800px）與 modal-xl（1140px）之間 */
+@media (min-width: 992px) {
+	.v2-modal-form {
+		--bs-modal-width: 940px;
+	}
+}
+
+/* 試算區下方的說明（手續費、證交稅的算法、試算的前提，D-56）：小字灰色，和算式分開 */
+.v2-calc-notes {
+	margin-top: 0.75rem;
+	padding-top: 0.5rem;
+	border-top: 1px dashed var(--v2-border);
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+}
+
+.v2-calc-notes div + div {
+	margin-top: 0.15rem;
+}
+
+/* 收盤價的日期：灰底小標籤＋日曆圖示，和價格本身分得清楚 */
+.v2-date-chip {
+	display: inline-block;
+	white-space: nowrap;
+	margin-top: 0.15rem;
+	font-size: 0.72rem;
+	font-weight: 400;
+	padding: 0.05rem 0.45rem;
+	border-radius: 0.25rem;
+	background-color: var(--v2-panel-bg);
+	border: 1px solid var(--v2-border);
+	color: var(--bs-secondary-color);
+}
+
+/* 摘要卡裡的日期標籤（明細的收盤價卡）：不要跟著大數字放大 */
+.v2-stat-value .v2-date-chip {
+	font-size: 0.8rem;
+}
+
+/* 摘要卡的收益率：有底色的小標籤＋箭頭（台股慣例：正數紅底▲、負數綠底▼、0 或沒有值灰底） */
+.v2-pct {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	white-space: nowrap;
+	vertical-align: middle;
+	font-size: 0.95rem;
+	font-weight: 600;
+	padding: 0.15rem 0.6rem;
+	border-radius: 1rem;
+}
+
+.v2-pct .bi {
+	font-size: 0.75em;
+}
+
+.v2-pct-up { background-color: #fdecea; color: var(--v2-profit); }
+.v2-pct-down { background-color: #e8f5e9; color: var(--v2-loss); }
+.v2-pct-flat { background-color: var(--v2-panel-bg); color: var(--bs-secondary-color); border: 1px solid var(--v2-border); }
+
+/* 「推估」旁邊的「?」（D-52）：小圓圈，顏色和「推估」標記相同；點一下跳出說明框（Bootstrap Popover） */
+.v2-help {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.15rem;
+	height: 1.15rem;
+	margin-left: 0.3rem;
+	border: 1px solid #b7791f;
+	border-radius: 50%;
+	color: #b7791f;
+	font-size: 0.7rem;
+	font-weight: 700;
+	text-decoration: none;
+	vertical-align: 1px;
+	cursor: pointer;
+}
+
+.v2-help:hover,
+.v2-help:focus {
+	background-color: #b7791f;
+	color: #fff;
+}
+
 /* ---------- 買進／賣出頁 ---------- */
 
 /* 表單頁的版面寬度：表單＋右側試算 */
@@ -310,6 +444,141 @@ body {
 	font-weight: 400;
 }
 
+/*
+ * 表格裡的紅賺綠虧（D-54 發現的問題）：Bootstrap 的 .table 會替每一格設定文字顏色
+ * （.table > :not(caption) > * > *），優先順序比單獨的 .text-profit／.text-loss 高，
+ * 所以表格裡的損益、收益率原本一直是黑色。這裡用「.v2-table td.xxx」提高優先順序。
+ */
+.v2-table td.text-profit { color: var(--v2-profit); }
+.v2-table td.text-loss { color: var(--v2-loss); }
+
 /* 已全部賣出的那一列雖然淡化，已實現損益仍是有意義的數字 → 維持紅賺綠虧 */
 .v2-table tr.v2-closed td.text-profit { color: var(--v2-profit); }
 .v2-table tr.v2-closed td.text-loss { color: var(--v2-loss); }
+
+/* ==========================================================
+ * 手機（寬度 < 768px，D-51）
+ * ========================================================== */
+@media (max-width: 767.98px) {
+
+	/* 摘要卡的大數字縮小一點，10 億等級的金額也放得下 */
+	.v2-stat-value {
+		font-size: 1.3rem;
+	}
+
+	/*
+	 * 表格變成卡片（.v2-table-cards）：同一份表格，手機上每一列變成一張卡片，每格一行「欄位名稱……數值」。
+	 * 欄位名稱來自每一格的 data-label（::before 讀出來）；表頭在卡片模式下不需要，隱藏。
+	 * 為什麼不另外寫一份手機用的畫面：只有一份表格，電腦和手機的數字一定一致，改欄位也只要改一個地方。
+	 */
+	.v2-table-cards thead {
+		display: none;
+	}
+
+	.v2-table-cards,
+	.v2-table-cards tbody,
+	.v2-table-cards tr,
+	.v2-table-cards td {
+		display: block;
+		width: 100%;
+	}
+
+	/* 一列＝一張卡片：卡片之間用分隔線 */
+	.v2-table-cards tr {
+		padding: 0.75rem 1rem;
+		border-bottom: 1px solid var(--v2-border);
+	}
+
+	.v2-table-cards tr:last-child {
+		border-bottom: 0;
+	}
+
+	/* 每一格一行：數值靠右，可以換行（例如金額下面的收益率小字） */
+	.v2-table-cards td {
+		padding: 0.2rem 0 !important; /* 蓋過電腦版的 ps-4、pe-4 */
+		border: 0;
+		text-align: right;
+		white-space: normal;
+		overflow: hidden; /* 包住左邊浮動的欄位名稱 */
+	}
+
+	/* 欄位名稱：浮在左邊，固定灰色（不跟著損益變紅綠） */
+	.v2-table-cards td[data-label]::before {
+		content: attr(data-label);
+		float: left;
+		margin-right: 1rem;
+		font-size: 0.85rem;
+		font-weight: 400;
+		color: var(--bs-secondary-color);
+	}
+
+	/* 每一行「欄位名稱……數值」之間加淡灰色細線（D-58），一行一行比較好對齊閱讀；
+	   卡片標題（代號／名稱、日期）與最下面的按鈕列不加線 */
+	.v2-table-cards td[data-label] {
+		padding: 0.45rem 0 !important;
+		border-bottom: 1px solid #ecebe7;
+	}
+
+	/* 置中的欄位（D-55）在卡片模式下照舊「名稱靠左、數值靠右」 */
+	.v2-table-cards td.v2-center {
+		text-align: right;
+	}
+
+	/* 卡片標題（代號／名稱、交易日期）：靠左、稍大 */
+	.v2-table-cards td.v2-card-title {
+		text-align: left;
+		font-size: 1.05rem;
+		padding-bottom: 0.4rem !important;
+	}
+
+	/* 操作按鈕：靠右排一排，放大到至少 44px 高，手指好點 */
+	.v2-table-cards td.v2-card-actions {
+		display: flex;
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		padding-top: 0.6rem !important;
+	}
+
+	.v2-table-cards td.v2-card-actions .btn {
+		min-height: 44px;
+		min-width: 64px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		margin: 0 !important;
+	}
+
+	/* 被選取那一列的左側強調色：卡片模式下改成整張卡片的左邊 */
+	.v2-table-cards tr.v2-selected {
+		box-shadow: inset 4px 0 0 var(--v2-accent);
+	}
+
+	.v2-table-cards tr.v2-selected td:first-child {
+		box-shadow: none;
+	}
+
+	/* 提示框：限制寬度、可以換行，不會超出畫面 */
+	.v2-tip::after {
+		white-space: normal;
+		max-width: 70vw;
+		width: max-content;
+	}
+
+	/* 「?」在手機上放大一點，手指比較好點 */
+	.v2-help {
+		width: 1.6rem;
+		height: 1.6rem;
+		font-size: 0.85rem;
+	}
+}
+
+/* 平板以下（< 992px）：頁首的台北時間分兩行（日期／時間），靠右對齊（D-56） */
+@media (max-width: 991.98px) {
+	.v2-clock {
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0;
+		line-height: 1.25;
+	}
+}

@@ -535,10 +535,17 @@ window.V2Form = (function () {
 				showError(input, error);
 				return !error;
 			},
-			/** 送出前：週末、休市日請使用者確認一次（沒有資料的年份不問） */
-			confirmTradingDay: function () {
+			/**
+			 * 送出前：週末、休市日請使用者確認一次（沒有資料的年份不問）。
+			 * D-55：不用瀏覽器內建的 confirm（樣式不能改、會顯示「localhost:18080 顯示」），
+			 * 改成在表單上方的提示框裡問（confirmInline）；回傳 Promise（使用者按下按鈕才知道結果）。
+			 */
+			confirmTradingDay: function (alertBox) {
 				const warning = nonTradingDayWarning(input.value, closedDays);
-				return !warning || warning.noData || window.confirm(input.value + '：' + warning.message);
+				if (!warning || warning.noData) {
+					return Promise.resolve(true);
+				}
+				return confirmInline(alertBox, '請確認日期', input.value + '：' + warning.message, '日期正確，送出');
 			}
 		};
 	}
@@ -679,12 +686,98 @@ window.V2Form = (function () {
 		}
 	}
 
+	// ===== 確認（D-55：取代瀏覽器內建的 window.confirm） =====
+
+	/** 做一個按鈕（textContent：文字不當成 HTML） */
+	function makeButton(text, className) {
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.className = className;
+		button.textContent = text;
+		return button;
+	}
+
+	/**
+	 * 在表單上方的提示框（box）裡問一次，例如「這天是星期日……確定日期正確嗎？」。
+	 * 用在表單裡（獨立頁面與對話框都一樣）：不再開第二層對話框（Bootstrap 不建議對話框疊對話框）。
+	 *
+	 * @return Promise：按「確認」→ true；按「返回修改」→ false
+	 */
+	function confirmInline(box, title, text, okText) {
+		return new Promise(function (resolve) {
+			box.className = 'alert alert-warning';
+			box.replaceChildren();
+			const strong = document.createElement('strong');
+			strong.textContent = title + '：';
+			box.appendChild(strong);
+			box.appendChild(document.createTextNode(text));
+			const buttons = document.createElement('div');
+			buttons.className = 'd-flex justify-content-end gap-2 mt-2';
+			const back = makeButton('返回修改', 'btn btn-sm btn-outline-secondary');
+			const ok = makeButton(okText, 'btn btn-sm btn-v2');
+			buttons.appendChild(back);
+			buttons.appendChild(ok);
+			box.appendChild(buttons);
+			box.scrollIntoView({ block: 'nearest' });
+			ok.focus();
+			function done(answer) {
+				box.className = 'd-none';
+				box.replaceChildren();
+				resolve(answer);
+			}
+			ok.addEventListener('click', function () { done(true); });
+			back.addEventListener('click', function () { done(false); });
+		});
+	}
+
+	/**
+	 * 確認對話框（例如刪除交易）：用頁面上的 #v2-confirm（fragments 的 confirmDialog，Bootstrap Modal）。
+	 * 頁面上沒有、或 Bootstrap 沒載入時，退回瀏覽器內建的 confirm（功能照常，只是樣式不同）。
+	 *
+	 * @param options { title, target（可選：另外框起來的重點，例如要刪的那一筆交易，D-56）,
+	 *                  message（可以有換行）, okText, okClass（例如 btn-danger） }
+	 * @return Promise：按確認 → true；取消、按 ✕、按外面 → false
+	 */
+	function confirmDialog(options) {
+		const el = document.getElementById('v2-confirm');
+		if (!el || !window.bootstrap || !window.bootstrap.Modal) {
+			return Promise.resolve(window.confirm((options.target ? options.target + '\n\n' : '') + options.message));
+		}
+		return new Promise(function (resolve) {
+			const modal = window.bootstrap.Modal.getOrCreateInstance(el);
+			const ok = el.querySelector('[data-v2-confirm-ok]');
+			el.querySelector('.modal-title').textContent = options.title;
+			const body = el.querySelector('.modal-body');
+			body.replaceChildren();
+			if (options.target) {
+				const target = document.createElement('span');
+				target.className = 'v2-confirm-target'; // 另外框起來（v2.css）
+				target.textContent = options.target;
+				body.appendChild(target);
+			}
+			body.appendChild(document.createTextNode(options.message)); // textContent：不當成 HTML；換行由 CSS（pre-line）顯示
+			ok.textContent = options.okText;
+			ok.className = 'btn ' + (options.okClass || 'btn-v2');
+			let answer = false;
+			function onOk() {
+				answer = true;
+				modal.hide();
+			}
+			ok.addEventListener('click', onOk);
+			el.addEventListener('hidden.bs.modal', function () {
+				ok.removeEventListener('click', onOk);
+				resolve(answer);
+			}, { once: true });
+			modal.show();
+		});
+	}
+
 	// ===== 送出流程（防重複送出＋Idempotency-Key＋逾時） =====
 
 	/**
 	 * @param form 表單
 	 * @param options.validate  檢查全部欄位，回傳 true 才送出
-	 * @param options.confirm   （可選）送出前的確認，例如週末、休市日；回傳 false 就不送
+	 * @param options.confirm   （可選）(alertBox) => Promise<boolean>：送出前的確認，例如週末、休市日；false 就不送
 	 * @param options.request   () => { method, url, body }
 	 * @param options.onSuccess (data) => { message, redirect }：成功提示與要跳去的頁面
 	 * @param options.onError   （可選）(result) => void：共用處理之後再做的事（例如賣超時重新讀取持有股數）
@@ -695,6 +788,7 @@ window.V2Form = (function () {
 		const overlay = form.closest('.v2-section').querySelector('.v2-submit-overlay');
 		const alertBox = document.getElementById('form-alert');
 		let submitting = false;
+		let confirming = false; // 正在等使用者回答確認：再按送出不重複問
 		let idempotencyKey = newKey();
 
 		function setLocked(locked) {
@@ -716,8 +810,8 @@ window.V2Form = (function () {
 
 		form.addEventListener('submit', function (event) {
 			event.preventDefault(); // 用 JS 送出（呼叫 API），不讓瀏覽器整頁送出
-			if (submitting) {
-				return; // 送出中再按 Enter／再點 → 不理會
+			if (submitting || confirming) {
+				return; // 送出中、或正在等使用者確認時再按 Enter／再點 → 不理會
 			}
 			alertBox.className = 'd-none';
 			if (!options.validate()) {
@@ -727,9 +821,17 @@ window.V2Form = (function () {
 				}
 				return;
 			}
-			if (options.confirm && !options.confirm()) {
-				return;
-			}
+			// 確認是 Promise（使用者按下按鈕才知道結果）；沒有確認就當成「確定」
+			confirming = true;
+			Promise.resolve(options.confirm ? options.confirm(alertBox) : true).then(function (ok) {
+				confirming = false;
+				if (ok) {
+					send();
+				}
+			});
+		});
+
+		function send() {
 			setLocked(true);
 			const request = options.request();
 			callApi(request.method, request.url, request.body, idempotencyKey).then(function (result) {
@@ -752,7 +854,7 @@ window.V2Form = (function () {
 					options.onError(result);
 				}
 			});
-		});
+		}
 
 		// 按「上一頁」回到這一頁時，瀏覽器可能原樣還原「送出中」的畫面 → 解除鎖定、換新識別碼
 		window.addEventListener('pageshow', function (event) {
@@ -777,6 +879,8 @@ window.V2Form = (function () {
 		plainToCents: plainToCents,
 		checkDate: checkDate,
 		nonTradingDayWarning: nonTradingDayWarning,
+		confirmInline: confirmInline,
+		confirmDialog: confirmDialog,
 		checkCode: checkCode,
 		codeTypingError: codeTypingError,
 		todayInTaipei: todayInTaipei,

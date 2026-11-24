@@ -165,6 +165,15 @@
 	check('錯誤框 版本衝突 → 黃色、不加「錯誤！」', alertBox.className + '｜' + alertBox.textContent.startsWith('錯誤！'),
 		'alert alert-warning｜false');
 
+	// 表單裡的確認框（D-55：取代瀏覽器內建的 confirm，不會顯示「localhost:18080 顯示」）
+	V2Form.confirmInline(alertBox, '請確認日期', '2026-11-22：這天是星期日，台股沒有開盤。確定日期正確嗎？', '日期正確，送出');
+	check('確認框 顯示在表單上方（黃色）', alertBox.className, 'alert alert-warning');
+	check('確認框 有「返回修改」「日期正確，送出」兩個按鈕',
+		Array.from(alertBox.querySelectorAll('button')).map(b => b.textContent).join('／'), '返回修改／日期正確，送出');
+	check('確認框 內容', alertBox.textContent.indexOf('這天是星期日') >= 0, true);
+	alertBox.querySelectorAll('button')[1].click();
+	check('確認框 按確認後收起', alertBox.className, 'd-none');
+
 	let pass = 0;
 	const lines = cases.map(function (c) {
 		const ok = c[1] === c[2];

@@ -14,19 +14,26 @@
 
 	<main class="container v2-form-page py-4">
 		<a th:href="@{/v2}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> 回持股總覽</a>
+		<!--/*
+			dialog 片段（D-53）：總覽、明細的「買進」用對話框打開時，伺服器只回這一段（/v2/buy?dialog=1）；
+			獨立頁面也用同一段，表單只有一份。程式在 v2-forms.js（data-v2-form 告訴它是哪一種表單）。
+		*/-->
+		<div th:fragment="dialog" data-v2-form="buy">
 		<h1 class="h4 mt-2 mb-3 v2-page-title v2-buy" id="title">記一筆買進</h1>
 
 		<div id="form-alert" class="d-none" role="alert"></div>
 		<noscript><div class="alert alert-danger">這一頁需要啟用 JavaScript 才能送出。</div></noscript>
 
 		<div class="row g-4">
-			<div class="col-8">
+			<div class="col-12 col-lg-8">
 				<div class="v2-section">
 					<!-- 送出中遮罩 -->
 					<div class="v2-submit-overlay d-none" role="status" aria-live="polite">
 						<div class="spinner-border mb-2"></div>
-						<div>送出中，請稍候…</div>
-						<div class="small text-secondary">第一次買的股票會向官方確認代號，最多需要約 10 秒；請勿關閉或重新整理頁面</div>
+						<div>正在記錄，請稍候…</div>
+						<!--/* D-56：代號在輸入時就查過了，這裡不再寫「會向官方確認代號」；
+							第一次買的股票送出時伺服器仍會再確認一次（資料一定以官方為準），所以保留「可能需要幾秒」 */-->
+						<div class="small text-secondary">可能需要幾秒；請勿關閉或重新整理頁面</div>
 					</div>
 					<form id="buy-form" class="p-4" novalidate>
 						<div class="mb-3">
@@ -36,13 +43,16 @@
 							<div id="code-hint" class="form-text">輸入代號即可，系統會自動判斷上市或上櫃</div>
 						</div>
 						<div class="row g-3 mb-3">
-							<div class="col-3">
+							<!--/* 表單三行（D-55）：代號（買進才有）→ 日期 → 數量＋價格 */-->
+							<div class="col-12 col-md-6">
 								<label for="date" class="form-label">買進日期</label>
 								<input id="date" type="date" class="form-control">
 								<div id="date-feedback" class="invalid-feedback"></div>
 								<div id="date-warning" class="form-text"></div>
 							</div>
-							<div class="col-5">
+							</div>
+							<div class="row g-3 mb-3">
+							<div class="col-12 col-md-6">
 								<label for="quantity" class="form-label">數量</label>
 								<div class="input-group has-validation">
 									<input id="quantity" class="form-control text-end" inputmode="decimal" autocomplete="off" placeholder="例如 300">
@@ -55,7 +65,7 @@
 								</div>
 								<div id="quantity-hint" class="form-text"></div>
 							</div>
-							<div class="col-4">
+							<div class="col-12 col-md-6">
 								<label for="price" class="form-label">每股價格</label>
 								<div class="input-group has-validation">
 									<input id="price" class="form-control text-end" inputmode="decimal" autocomplete="off" placeholder="例如 600.50">
@@ -65,7 +75,8 @@
 							</div>
 						</div>
 						<div class="d-flex justify-content-end gap-2">
-							<a th:href="@{/v2}" class="btn btn-outline-secondary">取消</a>
+							<!--/* data-v2-cancel：在對話框裡改成關閉對話框（v2-forms.js） */-->
+							<a th:href="@{/v2}" class="btn btn-outline-secondary" data-v2-cancel>取消</a>
 							<button type="submit" class="btn btn-v2"><i class="bi bi-check-lg me-1"></i>確認買進</button>
 						</div>
 					</form>
@@ -73,19 +84,23 @@
 			</div>
 
 			<!-- 右側：試算（只顯示，不送出；實際數字以伺服器重算為準） -->
-			<div class="col-4">
+			<div class="col-12 col-lg-4">
 				<div class="v2-section">
 					<div class="v2-section-header">試算</div>
 					<div class="p-3 v2-calc">
 						<div id="calc-empty" class="text-secondary">填好數量和價格後顯示</div>
 						<div id="calc-body" class="d-none">
 							<div class="v2-calc-row"><span>買進金額</span><span class="v2-num" id="calc-amount"></span></div>
-							<div class="v2-calc-row"><span>＋ 手續費（0.1425%，捨去到元，最低 20 元）</span><span class="v2-num" id="calc-fee"></span></div>
+							<div class="v2-calc-row"><span>＋ 手續費</span><span class="v2-num" id="calc-fee"></span></div>
 							<div class="v2-calc-row v2-calc-total"><span>這筆成本</span><span class="v2-num" id="calc-cost"></span></div>
 							<div id="calc-after" class="mt-3 d-none">
 								<div class="v2-calc-row text-secondary"><span>買進後股數</span><span class="v2-num" id="calc-after-shares"></span></div>
 								<div class="v2-calc-row text-secondary"><span>買進後平均成本</span><span class="v2-num" id="calc-after-avg"></span></div>
-								<div class="small text-secondary mt-1">以目前日期最新的持股試算；補登過去日期時以伺服器重算為準</div>
+							</div>
+							<!--/* 算法說明放在算式下方（D-56），算式那一行只留名稱，不會擠成好幾行 */-->
+							<div class="v2-calc-notes">
+								<div>手續費：0.1425%，捨去到元，最低 20 元</div>
+								<div>以目前日期最新的持股試算；補登過去日期時以伺服器重算為準</div>
 							</div>
 						</div>
 					</div>
@@ -93,150 +108,18 @@
 				<div id="holding-info" class="v2-info mt-3 small d-none"></div>
 			</div>
 		</div>
+		<!--/* 伺服器放進來的資料（固定代號、目前持股〔試算用〕、已知休市日）：用 JSON 放在片段裡，
+			因為放進對話框的 HTML 裡的一般 <script> 不會執行 */-->
+		<script type="application/json" class="v2-form-data" th:inline="javascript">
+			{ "fixedCode": /*[[${fixedCode}]]*/ null, "held": /*[[${heldByCode}]]*/ {}, "closedDays": /*[[${closedDays}]]*/ {} }
+		</script>
+		</div>
 	</main>
 
 	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
 	<script th:src="@{/js/v2-form.js}"></script>
-	<!--/* 伺服器放進頁面的資料（C8-1 a、C8-5 a）：固定代號、目前持股（試算用）、已知休市日 */-->
-	<script th:inline="javascript">
-		window.V2_PAGE = {
-			fixedCode: /*[[${fixedCode}]]*/ null,
-			held: /*[[${heldByCode}]]*/ {},
-			closedDays: /*[[${closedDays}]]*/ {}
-		};
-	</script>
-	<script>
-		(function () {
-			'use strict';
-			const PAGE = window.V2_PAGE;
-			const form = document.getElementById('buy-form');
-			const code = document.getElementById('code');
-			const date = document.getElementById('date');
-			const price = document.getElementById('price');
-
-			date.value = V2Form.todayInTaipei();
-
-			// 從持股列點進來（?code=2330）：代號固定、不能改
-			if (PAGE.fixedCode) {
-				code.value = PAGE.fixedCode;
-				code.readOnly = true;
-				code.setAttribute('data-always-readonly', '');
-				document.getElementById('code-hint').textContent = '從持股進入，代號不能修改';
-				const held = PAGE.held[PAGE.fixedCode];
-				const title = '買進 ' + PAGE.fixedCode + (held ? ' ' + held.name : '');
-				document.getElementById('title').textContent = title;
-				document.title = title + ' - 持股記帳 2.0';
-			} else {
-				V2Form.bindCode(code, function () {
-					showHoldingInfo();
-					recalc();
-				});
-				code.addEventListener('blur', function () {
-					if (code.value !== '') {
-						V2Form.showError(code, V2Form.checkCode(code.value));
-					}
-				});
-			}
-
-			const quantity = V2Form.bindQuantity({
-				input: document.getElementById('quantity'),
-				unitName: 'unit',
-				hint: document.getElementById('quantity-hint'),
-				onChange: recalc
-			});
-			document.getElementById('quantity').addEventListener('blur', function () {
-				if (this.value !== '') {
-					quantity.check();
-				}
-			});
-			V2Form.bindPrice(price, recalc);
-			// 日期最後綁定：綁定時會立刻檢查一次並呼叫 recalc，recalc 要用到上面的 quantity
-			const dateField = V2Form.bindDate(date, PAGE.closedDays, recalc);
-
-			(PAGE.fixedCode ? document.getElementById('quantity') : code).focus();
-
-			/** 目前持有（0 股的持股不在 held 裡 → 當成新的一檔試算） */
-			function currentHolding() {
-				const held = PAGE.held[code.value];
-				return held && held.shares > 0 ? held : null;
-			}
-
-			function showHoldingInfo() {
-				const box = document.getElementById('holding-info');
-				const held = currentHolding();
-				box.classList.toggle('d-none', !held);
-				if (held) {
-					const costCents = V2Form.plainToCents(held.total_cost);
-					box.textContent = '目前持有 ' + V2Form.withCommas(held.shares) + ' 股，平均成本 '
-						+ V2Form.formatCents(V2Form.avgCents(costCents, BigInt(held.shares))) + ' 元';
-				}
-			}
-
-			/** 即時試算：數量、價格都合格才顯示 */
-			function recalc() {
-				const q = quantity.shares();
-				const p = V2Form.parsePrice(price.value);
-				const ready = !q.error && !p.error;
-				document.getElementById('calc-empty').classList.toggle('d-none', ready);
-				document.getElementById('calc-body').classList.toggle('d-none', !ready);
-				if (!ready) {
-					return;
-				}
-				const amountCents = q.shares * p.cents;
-				const feeCents = V2Form.feeYuan(amountCents) * 100n;
-				const costCents = amountCents + feeCents;
-				document.getElementById('calc-amount').textContent = V2Form.formatCents(amountCents);
-				document.getElementById('calc-fee').textContent = V2Form.formatCents(feeCents);
-				document.getElementById('calc-cost').textContent = V2Form.formatCents(costCents);
-
-				const held = currentHolding();
-				document.getElementById('calc-after').classList.toggle('d-none', !held);
-				if (held) {
-					const newShares = BigInt(held.shares) + q.shares;
-					document.getElementById('calc-after-shares').textContent = V2Form.withCommas(newShares) + ' 股';
-					document.getElementById('calc-after-avg').textContent =
-						V2Form.formatCents(V2Form.avgCents(V2Form.plainToCents(held.total_cost) + costCents, newShares)) + ' 元';
-				}
-			}
-
-			showHoldingInfo();
-			recalc();
-
-			V2Form.bindSubmit(form, {
-				validate: function () {
-					// 每個欄位都檢查（不在第一個錯誤就停），一次把所有錯誤都顯示出來
-					const results = [
-						(function () { const m = V2Form.checkCode(code.value); V2Form.showError(code, m); return !m; })(),
-						dateField.check(),
-						quantity.check(),
-						(function () { const m = V2Form.parsePrice(price.value).error; V2Form.showError(price, m); return !m; })(),
-						// 股數 × 價格最多 100 億元（防多打 0；朋友回饋 3）。要放在數量、價格檢查之後
-						V2Form.checkAmount(quantity, document.getElementById('quantity'), price)
-					];
-					return results.every(Boolean);
-				},
-				confirm: dateField.confirmTradingDay,
-				request: function () {
-					return {
-						method: 'POST',
-						url: '/api/v2/holdings/' + encodeURIComponent(code.value) + '/trades',
-						body: {
-							side: 'BUY',
-							trade_date: date.value,
-							shares: Number(quantity.shares().shares), // 最大 99,999,999，在一般數字的精確範圍內
-							price: V2Form.centsToPlain(V2Form.parsePrice(price.value).cents)
-						}
-					};
-				},
-				onSuccess: function (data) {
-					return {
-						message: '已記錄：買進 ' + data.holding.code + ' ' + (data.holding.name || '') + ' '
-							+ V2Form.withCommas(data.trade.shares) + ' 股',
-						redirect: '/v2'
-					};
-				}
-			});
-		})();
-	</script>
+	<!--/* 表單程式在 v2-forms.js（D-53：獨立頁面和總覽、明細的對話框共用同一份）；伺服器的資料在上面的 .v2-form-data */-->
+	<script th:src="@{/js/v2-forms.js}"></script>
+	<script>V2Forms.initPage();</script>
 </body>
 </html>

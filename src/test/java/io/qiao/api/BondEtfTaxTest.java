@@ -91,7 +91,8 @@ class BondEtfTaxTest {
 
 		mockMvc.perform(get("/v2/sell").param("code", "00679B"))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("until: \"2099-12-31\"")))
-				.andExpect(content().string(Matchers.containsString("from: \"2017-01-01\"")));
+				// 頁面資料是 JSON（D-53：放進 .v2-form-data，對話框和獨立頁面共用）
+				.andExpect(content().string(Matchers.containsString("\"until\": \"2099-12-31\"")))
+				.andExpect(content().string(Matchers.containsString("\"from\": \"2017-01-01\"")));
 	}
 }

@@ -137,6 +137,31 @@ class V2FormatsTest {
 	}
 
 	@Test
+	void 取不到收盤價的原因_用詞和第一版網頁相同() {
+		// D-50：持有中卻沒有市值時，那一列顯示「無法計算」＋原因（原本只有「—」）
+		assertThat(formats.quoteMissingReason("NO_RECENT_TRADE")).isEqualTo("近期無成交資料");
+		assertThat(formats.quoteMissingReason("UNAVAILABLE")).isEqualTo("尚未取得收盤價");
+		assertThat(formats.quoteMissingReason("UPDATING")).isEqualTo("尚未取得收盤價");
+	}
+
+	@Test
+	void 市場別標籤的顏色_上市上櫃不同_不知道就不加() {
+		// D-54：上市、上櫃用不同顏色的標籤（刻意不用紅綠，避免和賺賠混淆）
+		assertThat(formats.marketClass("TWSE")).isEqualTo("v2-market v2-market-twse");
+		assertThat(formats.marketClass("TPEX")).isEqualTo("v2-market v2-market-tpex");
+		assertThat(formats.marketClass(null)).isEmpty();
+	}
+
+	@Test
+	void 收益率標籤_漲跌方向_紅漲綠跌_0與沒有值是持平() {
+		// D-54：摘要卡的百分比做成有底色的標籤＋箭頭
+		assertThat(formats.pctTrend("13.62")).isEqualTo("up");
+		assertThat(formats.pctTrend("-82.88")).isEqualTo("down");
+		assertThat(formats.pctTrend("0.00")).isEqualTo("flat");
+		assertThat(formats.pctTrend(null)).isEqualTo("flat");
+	}
+
+	@Test
 	void 市場別() {
 		assertThat(formats.market("TWSE")).isEqualTo("上市");
 		assertThat(formats.market("TPEX")).isEqualTo("上櫃");
