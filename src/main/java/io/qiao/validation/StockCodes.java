@@ -25,8 +25,10 @@ public final class StockCodes {
 	 */
 	public static final String PATTERN_OR_EMPTY = "^$|" + PATTERN;
 
-	/** 格式錯誤時的訊息 */
-	public static final String MESSAGE = "股票代號為 4～6 位數字，最後可加 1 個英文字母（例：2330、0050、00679B）";
+	/**
+	 * 格式錯誤時的訊息。2.0 網頁的前端檢查（v2-form.js）用同一句（D-49：原本兩邊措辭不同，統一）；改這裡時兩邊要一起改。
+	 */
+	public static final String MESSAGE = "股票代號格式不正確（4～6 位數字，最後可加 1 個英文字母，例如 2330、0050、00679B）";
 
 	private StockCodes() {
 	}

@@ -1,6 +1,7 @@
 package io.qiao.controller;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.DecimalFormat;
 
 import org.springframework.stereotype.Component;
@@ -69,6 +70,99 @@ public class V2Formats {
 			return odd + " 股（零股）";
 		}
 		return odd == 0 ? lots + " 張" : lots + " 張又 " + odd + " 股";
+	}
+
+	// ===== 表格的大數字簡寫（優化 v2-number-display，D-40、D-45）=====
+	// 為什麼：表格內容不換行，12,345,678.00 這種長數字會把欄位撐很寬，後面的欄位就看不到。
+	// 為什麼用「萬、億」：台股使用者習慣的讀法，比 12M 好懂。
+	// 只用在表格；摘要卡顯示完整金額（使用者要求），API 一律是完整數字。
+	// 簡寫一定會四捨五入，所以畫面上要搭配提示框（滑鼠移上去或點一下看完整數字，D-43）與虛線。
+
+	/**
+	 * 簡寫門檻：絕對值 ≥ 100 萬才簡寫（比這小最多 999,999.99，10 個字）。
+	 * D-45：原本是 1,000 萬，使用者改成 100 萬——表格更窄，手續費、證交稅這類較小的金額也會簡寫。
+	 */
+	private static final BigDecimal ABBREVIATE_FROM = new BigDecimal("1000000");
+	private static final BigDecimal TEN_THOUSAND = new BigDecimal("10000");
+	private static final BigDecimal HUNDRED_MILLION = new BigDecimal("100000000");
+
+	/** 這個金額在表格裡會不會被簡寫（決定要不要加虛線與 title） */
+	public boolean isAbbreviated(String amount) {
+		return amount != null && isLarge(new BigDecimal(amount));
+	}
+
+	/** 表格用的金額：≥ 100 萬簡寫成「123 萬」「1,235 萬」「1.23 億」，否則同 money()；null → — */
+	public String shortMoney(String amount) {
+		if (amount == null) {
+			return NONE;
+		}
+		BigDecimal value = new BigDecimal(amount);
+		return isLarge(value) ? abbreviate(value, "") : money(amount);
+	}
+
+	/** 表格用的帶正負號金額：+1,235 萬、−1,235 萬；未滿 100 萬同 signedMoney() */
+	public String shortSignedMoney(String amount) {
+		if (amount == null) {
+			return NONE;
+		}
+		BigDecimal value = new BigDecimal(amount);
+		return isLarge(value) ? sign(value) + abbreviate(value.abs(), "") : signedMoney(amount);
+	}
+
+	/** 簡寫金額的提示（滑鼠移上去看到）：完整金額＋「元」；沒有簡寫時 null（Thymeleaf 會省略 title 屬性） */
+	public String moneyTitle(String amount) {
+		return isAbbreviated(amount) ? money(amount) + " 元" : null;
+	}
+
+	/** 同 moneyTitle()，但帶正負號（給損益欄） */
+	public String signedMoneyTitle(String amount) {
+		return isAbbreviated(amount) ? signedMoney(amount) + " 元" : null;
+	}
+
+	/**
+	 * 摘要卡的提示（D-43）：卡片本身顯示完整金額，滑鼠移上去或點一下顯示「約 1,202 萬元」，大數字不用一位一位數。
+	 * 門檻和表格一樣（≥ 100 萬，使用者決定）；未滿或沒有值時 null（不顯示提示）。「約」表示有四捨五入。
+	 */
+	public String approxMoney(String amount) {
+		return isAbbreviated(amount) ? "約 " + shortMoney(amount) + "元" : null;
+	}
+
+	/** 同 approxMoney()，但帶正負號（給損益卡）：約 +1,235 萬元、約 −1,235 萬元 */
+	public String approxSignedMoney(String amount) {
+		return isAbbreviated(amount) ? "約 " + shortSignedMoney(amount) + "元" : null;
+	}
+
+	/** 表格用的股數：≥ 100 萬股簡寫成「123 萬股」「1,235 萬股」，否則同 shares()；null → — */
+	public String shortShares(Long shares) {
+		if (shares == null) {
+			return NONE;
+		}
+		BigDecimal value = BigDecimal.valueOf(shares);
+		return isLarge(value) ? abbreviate(value, "股") : shares(shares);
+	}
+
+	/** 簡寫股數的提示：完整股數＋「股」；沒有簡寫時 null */
+	public String sharesTitle(Long shares) {
+		return shares != null && isLarge(BigDecimal.valueOf(shares)) ? shares(shares) + " 股" : null;
+	}
+
+	private static boolean isLarge(BigDecimal value) {
+		return value.abs().compareTo(ABBREVIATE_FROM) >= 0;
+	}
+
+	/**
+	 * 簡寫（不含正負號，呼叫端自己加）：先換算成「萬」四捨五入到整數；
+	 * 進位後滿 10,000 萬（例如 99,995,000 → 10,000 萬）就改用「億」，留兩位小數，避免出現「10,000 萬」。
+	 *
+	 * @param unit 接在萬、億後面的單位（金額不加；股數加「股」）
+	 */
+	private static String abbreviate(BigDecimal value, String unit) {
+		BigDecimal wan = value.divide(TEN_THOUSAND, 0, RoundingMode.HALF_UP);
+		if (wan.abs().compareTo(TEN_THOUSAND) < 0) {
+			return new DecimalFormat("#,##0").format(wan) + " 萬" + unit;
+		}
+		BigDecimal yi = value.divide(HUNDRED_MILLION, 2, RoundingMode.HALF_UP);
+		return moneyFormat().format(yi) + " 億" + unit;
 	}
 
 	/** 市場別：TWSE → 上市、TPEX → 上櫃；還不知道 → — */

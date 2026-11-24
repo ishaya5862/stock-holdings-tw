@@ -190,7 +190,7 @@ public class HoldingService {
 				throw new DuplicateCodeException(locked.getCode());
 			}
 			tradeRepository.save(Trade.v1Buy(locked.getId(), lots, buyPrice, now));
-			locked.setUpdatedAt(now);
+			locked.touch(now); // 持股版本號 +1（C3-9）；touch 保證時間相同時也會 +1（D-47）
 			return locked;
 		});
 	}
@@ -216,7 +216,7 @@ public class HoldingService {
 		trade.setShares((long) lots * 1000);
 		trade.setPrice(buyPrice);
 		trade.setUpdatedAt(now);
-		holding.setUpdatedAt(now);
+		holding.touch(now); // 持股版本號 +1（C3-9、D-47）
 		// 在交易（@Transactional）內修改查出來的 Entity，結束時 JPA 會自動寫回資料庫，不需要再呼叫 save
 		return holding;
 	}

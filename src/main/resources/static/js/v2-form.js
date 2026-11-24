@@ -274,12 +274,15 @@ window.V2Form = (function () {
 		return null;
 	}
 
+	/** 代號格式錯誤的訊息：和伺服器的 StockCodes.MESSAGE 同一句（D-49），改的時候兩邊一起改 */
+	const CODE_FORMAT_MESSAGE = '股票代號格式不正確（4～6 位數字，最後可加 1 個英文字母，例如 2330、0050、00679B）';
+
 	/** 代號打字中：只抓不可能正確的（和第一版相同的「打到一半」規則） */
 	function codeTypingError(value) {
 		if (value === '' || /^[0-9]{0,6}$|^[0-9]{4,6}[A-Z]$/.test(value)) {
 			return null;
 		}
-		return '股票代號格式不正確（4～6 位數字，可加 1 個英文字母，例如 2330、00679B）';
+		return CODE_FORMAT_MESSAGE;
 	}
 
 	function checkCode(value) {
@@ -287,7 +290,7 @@ window.V2Form = (function () {
 			return '請輸入股票代號';
 		}
 		if (!CODE_PATTERN.test(value)) {
-			return '股票代號格式不正確（4～6 位數字，可加 1 個英文字母，例如 2330、00679B）';
+			return CODE_FORMAT_MESSAGE;
 		}
 		return null;
 	}
@@ -512,7 +515,9 @@ window.V2Form = (function () {
 			const warning = nonTradingDayWarning(input.value, closedDays);
 			if (warningBox) {
 				warningBox.textContent = warning ? warning.message : '';
-				warningBox.classList.toggle('text-warning-emphasis', Boolean(warning && !warning.noData));
+				// 週末、休市日的警告用深紅色（Bootstrap 的 text-danger-emphasis）：比原本的深黃棕色醒目，
+				// 使用者比較不會忽略「這天沒有開盤」；也和盈虧的紅色（較亮）分得開（D-46）
+				warningBox.classList.toggle('text-danger-emphasis', Boolean(warning && !warning.noData));
 				warningBox.classList.toggle('text-secondary', Boolean(warning && warning.noData));
 			}
 			if (onChange) {
@@ -614,6 +619,13 @@ window.V2Form = (function () {
 		box.scrollIntoView({ block: 'nearest' });
 	}
 
+	/**
+	 * 紅色錯誤框（alert-danger）開頭的粗體標題（D-48）：一眼看出「這次沒有記錄成功」，不是一般提醒。
+	 * 只加在網頁上：伺服器的 message 也給 App 2.0 用，不在訊息本身加「錯誤！」（App 有自己的錯誤樣式）。
+	 * 黃色框（warning：結果不確定、版本衝突、已被刪除）不加，它們不一定是使用者做錯。
+	 */
+	const ERROR_TITLE = '錯誤！';
+
 	/** 賣超時，伺服器附上「日期是推估的買進」（朋友回饋 2-1 a）→ 連到修改那筆買進 */
 	function estimatedBuyLinks(error) {
 		const buys = error.details && error.details.estimated_buys;
@@ -649,7 +661,7 @@ window.V2Form = (function () {
 						showError(input, error.fields[field]);
 					}
 				});
-				showAlert(alertBox, 'danger', '', error.message);
+				showAlert(alertBox, 'danger', ERROR_TITLE, error.message);
 				return false;
 			case 'VERSION_CONFLICT':
 				// 另一個裝置（例如手機）先改過或刪過 → 不覆蓋，請使用者看過最新內容再決定
@@ -661,7 +673,8 @@ window.V2Form = (function () {
 				showAlert(alertBox, 'warning', '', error.message, [{ href: '/v2', text: '回持股總覽' }]);
 				return false;
 			default:
-				showAlert(alertBox, 'danger', '', error.message, estimatedBuyLinks(error));
+				// 例：「錯誤！2026-11-24 賣出 111 股，但當時只持有 0 股」
+				showAlert(alertBox, 'danger', ERROR_TITLE, error.message, estimatedBuyLinks(error));
 				return false; // 失敗的請求伺服器不會記住 key，沿用不影響
 		}
 	}

@@ -154,7 +154,7 @@ public class ApiExceptionHandler {
 
 	/**
 	 * 其他地方的等鎖逾時或死結（MySQL 1205、1213）：資料庫已把這個請求整個復原，資料沒有寫壞。
-	 * 回 409 HOLDING_BUSY（訊息請使用者過幾秒再試），不讓它落到最後的 500（朋友回饋 2）。
+	 * 回 409 HOLDING_BUSY（訊息請使用者稍後再試），不讓它落到最後的 500（朋友回饋 2）。
 	 * 持股鎖（HoldingLock）與佔 key（IdempotencyGuard）已在原處轉成更明確的錯誤，這裡是最後一道保險。
 	 */
 	@ExceptionHandler(PessimisticLockingFailureException.class)

@@ -54,6 +54,88 @@ class V2FormatsTest {
 		assertThat(formats.lots(null)).isEmpty();
 	}
 
+	// ===== 表格的大數字簡寫（優化 v2-number-display，D-40、D-45）=====
+	// 規則：絕對值 ≥ 100 萬才簡寫（D-45 從 1,000 萬改成 100 萬）；萬取整數（四捨五入、千分位）；
+	// 四捨五入後滿 10,000 萬改用「億」（兩位小數）。簡寫時提示放完整數字＋單位；沒有簡寫時是 null（不加提示）。
+
+	@Test
+	void 簡寫_未滿100萬完整顯示_沒有提示() {
+		assertThat(formats.shortMoney("999999.99")).isEqualTo("999,999.99");
+		assertThat(formats.isAbbreviated("999999.99")).isFalse();
+		assertThat(formats.moneyTitle("999999.99")).isNull();
+		assertThat(formats.shortMoney("368022.75")).isEqualTo("368,022.75");
+	}
+
+	@Test
+	void 簡寫_滿100萬用萬_四捨五入到萬_提示是完整金額() {
+		assertThat(formats.shortMoney("1000000.00")).isEqualTo("100 萬");
+		assertThat(formats.shortMoney("1234567.00")).isEqualTo("123 萬");     // 123.4567 萬 → 123
+		assertThat(formats.shortMoney("1235000.00")).isEqualTo("124 萬");     // 123.5 萬 → 124（四捨五入）
+		assertThat(formats.shortMoney("9999999.99")).isEqualTo("1,000 萬");   // 999.9999… 萬 → 1,000
+		assertThat(formats.shortMoney("12345678.00")).isEqualTo("1,235 萬");  // 1,234.5678 萬 → 1,235
+		assertThat(formats.shortMoney("12344999.99")).isEqualTo("1,234 萬");  // 1,234.4999… 萬 → 1,234
+		assertThat(formats.isAbbreviated("1000000.00")).isTrue();
+		assertThat(formats.moneyTitle("1234567.00")).isEqualTo("1,234,567.00 元");
+	}
+
+	@Test
+	void 簡寫_滿1億用億_兩位小數_四捨五入後滿1億也改用億() {
+		assertThat(formats.shortMoney("123456789.00")).isEqualTo("1.23 億");
+		assertThat(formats.shortMoney("12345678900.00")).isEqualTo("123.46 億");
+		assertThat(formats.shortMoney("99994999.00")).isEqualTo("9,999 萬");  // 9,999.4999 萬 → 9,999
+		assertThat(formats.shortMoney("99995000.00")).isEqualTo("1.00 億");   // 9,999.5 萬會進位成 10,000 萬 → 改用億
+	}
+
+	@Test
+	void 簡寫_帶正負號_負號用數學減號_提示也帶正負號() {
+		assertThat(formats.shortSignedMoney("12345678.00")).isEqualTo("+1,235 萬");
+		assertThat(formats.shortSignedMoney("-12345678.00")).isEqualTo("−1,235 萬");
+		assertThat(formats.shortSignedMoney("-20252.25")).isEqualTo("−20,252.25");
+		assertThat(formats.isAbbreviated("-1000000.00")).isTrue();
+		assertThat(formats.isAbbreviated("-999999.99")).isFalse();
+		assertThat(formats.signedMoneyTitle("-12345678.00")).isEqualTo("−12,345,678.00 元");
+		assertThat(formats.signedMoneyTitle("-20252.25")).isNull();
+	}
+
+	@Test
+	void 簡寫_沒有值顯示破折號_沒有提示() {
+		assertThat(formats.shortMoney(null)).isEqualTo("—");
+		assertThat(formats.shortSignedMoney(null)).isEqualTo("—");
+		assertThat(formats.isAbbreviated(null)).isFalse();
+		assertThat(formats.moneyTitle(null)).isNull();
+	}
+
+	@Test
+	void 簡寫_股數用萬股億股_提示是完整股數() {
+		assertThat(formats.shortShares(999_999L)).isEqualTo("999,999");
+		assertThat(formats.sharesTitle(999_999L)).isNull();
+		assertThat(formats.shortShares(1_000_000L)).isEqualTo("100 萬股");
+		assertThat(formats.shortShares(12_345_678L)).isEqualTo("1,235 萬股");
+		assertThat(formats.sharesTitle(12_345_678L)).isEqualTo("12,345,678 股");
+		assertThat(formats.shortShares(2_199_999_978L)).isEqualTo("22.00 億股");
+		assertThat(formats.shortShares(null)).isEqualTo("—");
+		assertThat(formats.sharesTitle(null)).isNull();
+	}
+
+	// 摘要卡的提示（D-43）：卡片顯示完整金額，滑鼠移上去或點一下顯示「約 X 萬元」；門檻和表格一樣（D-45 起 100 萬），未滿沒有提示
+
+	@Test
+	void 摘要卡提示_滿100萬顯示約幾萬元_未滿沒有提示() {
+		assertThat(formats.approxMoney("12017100.00")).isEqualTo("約 1,202 萬元");   // 1,201.71 萬 → 1,202
+		assertThat(formats.approxMoney("1001796261.67")).isEqualTo("約 10.02 億元");
+		assertThat(formats.approxMoney("2854000.00")).isEqualTo("約 285 萬元");      // 285.4 萬 → 285
+		assertThat(formats.approxMoney("999999.99")).isNull();
+		assertThat(formats.approxMoney(null)).isNull();
+	}
+
+	@Test
+	void 摘要卡提示_損益帶正負號() {
+		assertThat(formats.approxSignedMoney("12345678.00")).isEqualTo("約 +1,235 萬元");
+		assertThat(formats.approxSignedMoney("-12345678.00")).isEqualTo("約 −1,235 萬元");
+		assertThat(formats.approxSignedMoney("925375.00")).isNull();                 // 未滿 100 萬
+		assertThat(formats.approxSignedMoney(null)).isNull();
+	}
+
 	@Test
 	void 市場別() {
 		assertThat(formats.market("TWSE")).isEqualTo("上市");
