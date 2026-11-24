@@ -6,6 +6,7 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.qiao.calculation.PositionCalculator;
 import io.qiao.calculation.PositionResult;
 import io.qiao.service.PositionQueryService.PositionView;
 
@@ -18,6 +19,7 @@ import io.qiao.service.PositionQueryService.PositionView;
  * | unrealized_pnl | 字串        | 有收盤價的持股未實現損益加總                                                    |
  * | return_pct     | 字串或 null | unrealized_pnl ÷ total_cost × 100，四捨五入到小數第二位；沒有持有中的持股為 null |
  * | realized_pnl   | 字串        | 全部持股（含已全部賣出）的已實現損益加總                                        |
+ * | realized_return_pct | 字串或 null | realized_pnl ÷ 全部持股的分攤成本加總 × 100；沒有任何賣出為 null（優化 realized-return） |
  * | holding_count  | 整數        | 持有中（股數 > 0）的檔數                                                        |
  * | quote_missing  | 整數        | 持有中但取不到收盤價的檔數（不算進市值、未實現，但算進成本）                      |
  * | data_error_count | 整數      | 資料異常（交易時間線不合理、無法計算）的檔數；這幾檔不算進任何金額                |
@@ -28,6 +30,7 @@ public record SummaryV2Response(
 		@JsonProperty("unrealized_pnl") String unrealizedPnl,
 		@JsonProperty("return_pct") String returnPct,
 		@JsonProperty("realized_pnl") String realizedPnl,
+		@JsonProperty("realized_return_pct") String realizedReturnPct,
 		@JsonProperty("holding_count") int holdingCount,
 		@JsonProperty("quote_missing") int quoteMissing,
 		@JsonProperty("data_error_count") int dataErrorCount) {
@@ -40,6 +43,7 @@ public record SummaryV2Response(
 		BigDecimal marketValue = BigDecimal.ZERO;
 		BigDecimal unrealizedPnl = BigDecimal.ZERO;
 		BigDecimal realizedPnl = BigDecimal.ZERO;
+		BigDecimal realizedCost = BigDecimal.ZERO; // 已實現部分的成本加總：總計收益率 = Σ已實現 ÷ Σ分攤成本（不是各檔百分比平均）
 		int holdingCount = 0;
 		int quoteMissing = 0;
 		int dataErrorCount = 0;
@@ -51,6 +55,7 @@ public record SummaryV2Response(
 			}
 			PositionResult position = view.position();
 			realizedPnl = realizedPnl.add(position.realizedPnl()); // 已全部賣出的也算
+			realizedCost = realizedCost.add(position.realizedCost());
 			if (position.shares() == 0) {
 				continue;
 			}
@@ -69,6 +74,7 @@ public record SummaryV2Response(
 				? null
 				: unrealizedPnl.multiply(HUNDRED).divide(totalCost, 2, RoundingMode.HALF_UP);
 		return new SummaryV2Response(Money.of(totalCost), Money.of(marketValue), Money.of(unrealizedPnl),
-				Money.of(returnPct), Money.of(realizedPnl), holdingCount, quoteMissing, dataErrorCount);
+				Money.of(returnPct), Money.of(realizedPnl), Money.of(PositionCalculator.percentOf(realizedPnl, realizedCost)),
+				holdingCount, quoteMissing, dataErrorCount);
 	}
 }

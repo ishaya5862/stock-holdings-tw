@@ -47,9 +47,12 @@
 			</div>
 			<div class="col">
 				<div class="v2-stat">
-					<div class="v2-stat-label">已實現損益（累計）</div>
-					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.realizedPnl)}"
-						th:text="${@v2Formats.signedMoney(summary.realizedPnl)}">+17,135.75</div>
+					<!--/* 已實現收益率 = 已實現損益 ÷ 賣出部分的成本（優化 realized-return）；沒有賣出過為「—」 */-->
+					<div class="v2-stat-label" title="收益率 = 已實現損益 ÷ 賣出部分的成本（含買進手續費）">已實現損益（累計）</div>
+					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.realizedPnl)}">
+						<span th:text="${@v2Formats.signedMoney(summary.realizedPnl)}">+17,135.75</span>
+						<small class="fs-6" th:text="${@v2Formats.signedPct(summary.realizedReturnPct)}">+13.62%</small>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -118,8 +121,12 @@
 								th:text="${@v2Formats.signedMoney(h.unrealizedPnl)}">+20,252.25</td>
 							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
 								th:text="${@v2Formats.signedPct(h.returnPct)}">+5.50%</td>
-							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}"
-								th:text="${@v2Formats.signedMoney(h.realizedPnl)}">+16,706.75</td>
+							<!--/* 已實現收益率用小字放在金額下面；沒有賣出過就不顯示（避免每一列都多一個「—」） */-->
+							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}">
+								<span th:text="${@v2Formats.signedMoney(h.realizedPnl)}">+16,706.75</span>
+								<div th:if="${h.realizedReturnPct != null}" class="small"
+									th:text="${@v2Formats.signedPct(h.realizedReturnPct)}">+13.62%</div>
+							</td>
 						</th:block>
 
 						<td class="text-end pe-4">

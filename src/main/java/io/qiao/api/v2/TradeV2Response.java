@@ -26,6 +26,7 @@ import io.qiao.service.PositionQueryService.PositionView;
  * | tax            | 字串或 null | 證交稅（只有賣出有）                                                 |
  * | cost_of_sold   | 字串或 null | 這次賣出分攤掉的成本（移動平均，到分；只有賣出有）                   |
  * | realized_pnl   | 字串或 null | 這次賣出的已實現損益（只有賣出有）                                   |
+ * | realized_return_pct | 字串或 null | 這次賣出的已實現收益率（%）= realized_pnl ÷ cost_of_sold × 100（只有賣出有；優化 realized-return） |
  * | shares_after   | 整數或 null | 這筆交易之後的持有股數（amount 到 shares_after：持股資料異常時為 null） |
  * | version        | 整數        | 交易版本號：修改、刪除時要帶上（C3-5），和伺服器不同代表另一個裝置改過 |
  *
@@ -43,6 +44,7 @@ public record TradeV2Response(
 		@JsonProperty("tax") String tax,
 		@JsonProperty("cost_of_sold") String costOfSold,
 		@JsonProperty("realized_pnl") String realizedPnl,
+		@JsonProperty("realized_return_pct") String realizedReturnPct,
 		@JsonProperty("shares_after") Long sharesAfter,
 		@JsonProperty("version") Long version) {
 
@@ -74,7 +76,7 @@ public record TradeV2Response(
 				trade.isDateEstimated(),
 				trade.getShares(),
 				Money.of(trade.getPrice()),
-				null, null, null, null, null, null,
+				null, null, null, null, null, null, null,
 				trade.getVersion());
 	}
 
@@ -95,6 +97,7 @@ public record TradeV2Response(
 				Money.of(line.tax()),
 				Money.of(line.costOfSold()),
 				Money.of(line.realizedPnl()),
+				Money.of(line.realizedReturnPct()),
 				line.sharesAfter(),
 				trade.getVersion());
 	}

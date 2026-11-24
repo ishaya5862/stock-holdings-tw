@@ -89,6 +89,8 @@ class V2PageControllerTest {
 				.andExpect(content().string(Matchers.containsString("+20,252.25")))
 				.andExpect(content().string(Matchers.containsString("+5.50%")))
 				.andExpect(content().string(Matchers.containsString("+16,706.75")))
+				// 已實現收益率：16,706.75 ÷ 122,674.25 × 100 = 13.62（摘要卡與持股列，優化 realized-return）
+				.andExpect(content().string(Matchers.containsString("+13.62%")))
 				// 名稱是乾淨的（v1 的「請更新 App 2.0」加註只在 v1 API，M1）
 				.andExpect(content().string(Matchers.not(Matchers.containsString("請更新 App 2.0"))))
 				.andExpect(content().string(Matchers.containsString("href=\"/v2/sell?code=2330\"")))
@@ -153,6 +155,7 @@ class V2PageControllerTest {
 				.andExpect(content().string(Matchers.containsString("199.00")))     // 賣出手續費
 				.andExpect(content().string(Matchers.containsString("420.00")))     // 證交稅
 				.andExpect(content().string(Matchers.containsString("+16,706.75")))
+				.andExpect(content().string(Matchers.containsString("+13.62%")))     // 這次賣出與整檔的已實現收益率
 				.andExpect(content().string(Matchers.containsString("600 股（零股）")))
 				.andExpect(content().string(Matchers.containsString("data-delete-trade")))
 				.andExpect(content().string(Matchers.containsString("/edit\"")));

@@ -113,7 +113,11 @@ class DataErrorIsolationTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.total_cost").value("180256.00"))
 				.andExpect(jsonPath("$.holding_count").value(1))
-				.andExpect(jsonPath("$.data_error_count").value(1));
+				.andExpect(jsonPath("$.data_error_count").value(1))
+				// 異常那一檔有一筆賣出；不算進總計 → 正常的 2330 沒有賣出，已實現收益率是 null（優化 realized-return）
+				.andExpect(jsonPath("$.realized_return_pct").value(Matchers.nullValue()));
+		mockMvc.perform(get("/api/v2/holdings/{code}", "2363"))
+				.andExpect(jsonPath("$.realized_return_pct").value(Matchers.nullValue()));
 	}
 
 	@Test

@@ -20,6 +20,7 @@ import io.qiao.service.PositionQueryService.PositionView;
  * | average_cost     | 字串或 null | 平均成本（含買進手續費）= total_cost ÷ shares，到分；0 股或資料異常為 null      |
  * | total_cost       | 字串或 null | 持有成本（目前持有股票的成本，含買進手續費）；資料異常為 null                    |
  * | realized_pnl     | 字串或 null | 已實現損益（歷次賣出加總）；資料異常為 null                                      |
+ * | realized_return_pct | 字串或 null | 已實現收益率（%）= 歷次賣出的已實現損益加總 ÷ 分攤成本加總 × 100；沒有賣出過或資料異常為 null（優化 realized-return） |
  * | quote_status     | 字串        | OK／UPDATING（還沒查過）／UNAVAILABLE（官方連不上）／NO_RECENT_TRADE（C5-8）    |
  * | close_price      | 字串或 null | 最近收盤價                                                                     |
  * | price_date       | 字串或 null | 收盤價日期 YYYY-MM-DD                                                          |
@@ -43,6 +44,7 @@ public record HoldingV2Response(
 		@JsonProperty("average_cost") String averageCost,
 		@JsonProperty("total_cost") String totalCost,
 		@JsonProperty("realized_pnl") String realizedPnl,
+		@JsonProperty("realized_return_pct") String realizedReturnPct,
 		@JsonProperty("quote_status") String quoteStatus,
 		@JsonProperty("close_price") String closePrice,
 		@JsonProperty("price_date") LocalDate priceDate,
@@ -68,6 +70,7 @@ public record HoldingV2Response(
 				position != null ? Money.of(position.averageCost()) : null,
 				position != null ? Money.of(position.remainingCost()) : null,
 				position != null ? Money.of(position.realizedPnl()) : null,
+				position != null ? Money.of(position.realizedReturnPct()) : null,
 				view.status().name(),
 				hasQuote ? Money.of(view.quote().closePrice()) : null,
 				hasQuote ? view.quote().priceDate() : null,

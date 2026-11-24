@@ -224,6 +224,48 @@ class ApiV2ReadTest {
 				.andExpect(jsonPath("$.quote_missing").value(0));
 	}
 
+	// ===== 已實現收益率（優化 realized-return，D-37）：已實現損益 ÷ 分攤成本 × 100，字串、兩位小數 =====
+
+	@Test
+	void 已實現收益率_持股與賣出那一筆都是13點62_買進那一筆是null但欄位一定出現() throws Exception {
+		tsmcExample(); // 已實現 16,706.75 ÷ 分攤成本 122,674.25 × 100 = 13.6188… → 13.62
+
+		mockMvc.perform(get("/api/v2/holdings/{code}", "2330"))
+				.andExpect(jsonPath("$.realized_return_pct").value("13.62"))
+				.andExpect(jsonPath("$.realized_return_pct").isString());
+		mockMvc.perform(get("/api/v2/holdings/{code}/trades", "2330"))
+				.andExpect(jsonPath("$[0]", Matchers.hasKey("realized_return_pct")))
+				.andExpect(jsonPath("$[0].realized_return_pct").value(Matchers.nullValue()))
+				.andExpect(jsonPath("$[2].realized_return_pct").value("13.62"));
+	}
+
+	@Test
+	void 已實現收益率_沒有賣出過_持股與總計都是null但欄位一定出現() throws Exception {
+		tradeService.buy("2330", D1, 300, new BigDecimal("600.00"));
+
+		mockMvc.perform(get("/api/v2/holdings/{code}", "2330"))
+				.andExpect(jsonPath("$", Matchers.hasKey("realized_return_pct")))
+				.andExpect(jsonPath("$.realized_return_pct").value(Matchers.nullValue()));
+		mockMvc.perform(get("/api/v2/summary"))
+				.andExpect(jsonPath("$", Matchers.hasKey("realized_return_pct")))
+				.andExpect(jsonPath("$.realized_return_pct").value(Matchers.nullValue()));
+	}
+
+	@Test
+	void 已實現收益率_總計用加總計算_含已全部賣出_不是各檔百分比平均() throws Exception {
+		tsmcExample();                                                 // 已實現 16,706.75、分攤成本 122,674.25（13.62%）
+		tradeService.buy("2363", D1, 1000, new BigDecimal("10.00"));
+		tradeService.sell("2363", D2, 1000, new BigDecimal("10.50")); // 已實現 429、分攤成本 10,020（4.28%）
+
+		// (16,706.75 + 429) ÷ (122,674.25 + 10,020) × 100 = 17,135.75 ÷ 132,694.25 × 100 = 12.9137… → 12.91
+		// （兩檔百分比平均是 (13.62 + 4.28) ÷ 2 = 8.95，不是這個）
+		mockMvc.perform(get("/api/v2/summary"))
+				.andExpect(jsonPath("$.realized_pnl").value("17135.75"))
+				.andExpect(jsonPath("$.realized_return_pct").value("12.91"));
+		mockMvc.perform(get("/api/v2/holdings/{code}", "2363"))
+				.andExpect(jsonPath("$.realized_return_pct").value("4.28"));
+	}
+
 	// ===== 和 v1 分開（M1、M3、M4） =====
 
 	@Test

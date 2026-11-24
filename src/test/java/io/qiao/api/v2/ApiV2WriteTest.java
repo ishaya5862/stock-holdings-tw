@@ -106,6 +106,8 @@ class ApiV2WriteTest {
 				.andExpect(jsonPath("$.trade.side").value("SELL"))
 				.andExpect(jsonPath("$.trade.tax").value("420.00"))
 				.andExpect(jsonPath("$.trade.realized_pnl").value("16706.75"))
+				.andExpect(jsonPath("$.trade.realized_return_pct").value("13.62")) // 16,706.75 ÷ 122,674.25 × 100
+				.andExpect(jsonPath("$.holding.realized_return_pct").value("13.62"))
 				.andExpect(jsonPath("$.holding.shares").value(600))
 				.andExpect(jsonPath("$.holding.average_cost").value("613.37"))
 				.andExpect(jsonPath("$.holding.unrealized_pnl").value("20252.25"));

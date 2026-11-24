@@ -18,8 +18,8 @@
 
 | 網址 | 頁面 |
 |---|---|
-| `/v2` | 持股總覽：持有成本、市值、未實現損益、已實現損益；已全部賣出的持股可用開關隱藏 |
-| `/v2/holdings/2330` | 一檔的交易明細：每筆的手續費、證交稅、已實現損益、交易後股數；修改、刪除 |
+| `/v2` | 持股總覽：持有成本、市值、未實現損益與收益率、已實現損益與收益率；已全部賣出的持股可用開關隱藏 |
+| `/v2/holdings/2330` | 一檔的交易明細：每筆的手續費、證交稅、已實現損益與收益率（賣出）、交易後股數；修改、刪除 |
 | `/v2/buy`、`/v2/buy?code=2330` | 記一筆買進（從持股進入時代號固定） |
 | `/v2/sell?code=2330` | 賣出一部分或全部 |
 | `/v2/trades/{id}/edit` | 修改一筆交易的日期、股數、價格 |
@@ -122,6 +122,7 @@
 | 多次買進的移動平均成本（含買進手續費）、平均成本四捨五入到分 | `PositionCalculatorTest`（台積電例：613.37、368,022.75） |
 | 部分賣出：分攤成本到分、已實現損益；分兩次賣與一次賣的已實現總和相同；全部賣光時剩餘成本歸零 | `PositionCalculatorTest` |
 | 未實現損益與收益率的分母是「剩餘成本」 | `PositionCalculatorTest` |
+| 已實現收益率 = 已實現損益 ÷ 分攤成本；一檔、總計用加總再除（不是各筆平均）；沒有賣出過為 null | `PositionCalculatorTest`、`ApiV2ReadTest`（台積電例：13.62%；總計例：12.91%） |
 | 零股的手續費一樣最低 20 元；金額有「分」 | `PositionCalculatorTest` |
 | 不能賣超（含補登過去日期、修改或刪除舊交易造成之後賣超） | `PositionCalculatorTest`、`TradeServiceTest` |
 | 債券 ETF 停徵證交稅（依賣出日期、期限可設定） | `ProfitCalculatorTest`、`PositionCalculatorTest`、`BondEtfTaxTest` |
