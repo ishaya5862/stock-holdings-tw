@@ -1,2 +1,5 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+# Dockerfile、.dockerignore 在 Linux 容器裡使用：行尾的 \r 會被當成指令的一部分（例如 -DskipTests\r），一定要 LF
+/Dockerfile text eol=lf
+/.dockerignore text eol=lf

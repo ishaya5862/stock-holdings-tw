@@ -1,6 +1,7 @@
 # MySQL 資料庫（Docker Compose）
 # - 用 mvnw spring-boot:run 啟動程式時，Spring Boot 會自動執行這個檔案，不需手動啟動。
 # - 也可以手動啟動：docker compose up -d
+# - 用 Docker 啟動整個專案（程式＋MySQL，不用安裝 JDK）：docker compose --profile app up --build（見下方 app 服務）
 #
 # 密碼採「環境變數 + 開發用預設值」：
 #   預設值只是本機開發用的假密碼，不是真實密碼；正式環境請用環境變數覆蓋。
@@ -25,10 +26,41 @@ services:
       # 資料存在 Docker volume：容器關掉、重開資料都還在
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # 用 127.0.0.1（走 TCP），不用 localhost（走 socket）：MySQL 第一次啟動時會先開一個「只接受 socket」的暫時伺服器
+      # 做初始化，用 localhost 會太早回報準備好，程式這時連 TCP 會失敗；127.0.0.1 要等正式的伺服器開好才會成功
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # 程式本身（用 Docker 啟動整個專案時才需要，電腦不用安裝 JDK）：
+  #   docker compose --profile app up --build
+  # profiles: ["app"] → 只有指令加上 --profile app 才會啟動。
+  # 為什麼要這樣：mvnw spring-boot:run 會自動啟動這個檔案的服務，但不會啟用任何 profile，
+  # 所以開發時只啟動 MySQL，不會多開一個程式搶 8080、同時寫同一個資料庫。
+  app:
+    profiles: ["app"]
+    build: .
+    image: stock-holdings-tw:local
+    environment:
+      # 容器裡沒有 Docker：關掉 Spring Boot 的 Docker Compose 自動整合，改用下面的連線設定
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+      DB_HOST: mysql # 同一個 compose 裡，服務名稱就是主機名稱
+      DB_PORT: "3306"
+      DB_PASSWORD: ${DB_PASSWORD:-devpass}
+      # 只寫名稱、不寫值：電腦上有設定這個環境變數才傳進容器，沒設定就用程式的預設值（不在這裡重複寫一次預設值）
+      TWSE_BASE_URL:
+      TPEX_BASE_URL:
+      HOLIDAY_BASE_URL:
+      HOLIDAY_API_ENABLED:
+      BOND_ETF_TAX_EXEMPT_UNTIL:
+      # 容器的時區刻意不設定（預設 UTC）：程式一律以台北時間計算，不依賴主機時區
+    ports:
+      # 電腦這端的埠號預設 8080，被占用時可以改：APP_PORT=8081 docker compose --profile app up
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy # 等 MySQL 準備好才啟動程式
 
 volumes:
   mysql-data:

@@ -1,0 +1,17 @@
+# 建置映像檔時不需要送進 Docker 的檔案（Dockerfile 只用到 mvnw、pom.xml、.mvn、src）
+# 排除後建置比較快，也避免本機的編譯結果或設定檔被包進映像檔
+.git
+target
+.vscode
+.idea
+.settings
+.classpath
+.project
+*.log
+logs
+data
+.env
+application-local.properties
+screenshots
+docs
+*.md
