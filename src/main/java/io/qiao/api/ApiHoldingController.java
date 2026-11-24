@@ -23,7 +23,7 @@ import io.qiao.validation.StockCodes;
 import jakarta.validation.Valid;
 
 /**
- * App 1.0 API（第 5 題）。路徑一律 /api/v1，回應 JSON；規格見 README「App 1.0 API」。
+ * App 1.0 API（第 5 題）。路徑一律 /api/v1，回應 JSON；規格見 docs/api-v1.md。
  * 錯誤一律由 ApiExceptionHandler／ApiAwareErrorController 回 {"error":{"code","message"}}。
  *
  * 和網頁共用 HoldingService（新增、修改、刪除、盈虧計算的規則只寫一次），這裡只負責「轉成規格的格式」。
