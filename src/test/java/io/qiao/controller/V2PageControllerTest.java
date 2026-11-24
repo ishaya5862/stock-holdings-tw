@@ -17,6 +17,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.hamcrest.Matchers;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -170,7 +173,7 @@ class V2PageControllerTest {
 		quoteCache.putUnavailable("2330", LocalDateTime.of(2026, 11, 20, 14, 0)); // 官方連不上
 
 		mockMvc.perform(get("/v2"))
-				.andExpect(content().string(Matchers.containsString("colspan=\"3\"")))
+				.andExpect(content().string(Matchers.containsString("colspan=\"2\""))) // 市值、收益率（D-54 起損益欄只在明細）
 				.andExpect(content().string(Matchers.containsString("無法計算")))
 				.andExpect(content().string(Matchers.containsString("尚未取得收盤價")));
 		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
@@ -186,8 +189,10 @@ class V2PageControllerTest {
 		mockMvc.perform(get("/v2"))
 				.andExpect(content().string(Matchers.containsString("v2-table-cards")))
 				.andExpect(content().string(Matchers.containsString("data-label=\"市值\"")))
-				.andExpect(content().string(Matchers.containsString("data-label=\"已實現損益\"")))
-				.andExpect(content().string(Matchers.containsString("navbar-toggler")))
+				.andExpect(content().string(Matchers.containsString("data-label=\"收益率\"")))
+				// D-56：頁首不再有「☰」與「持股總覽」頁籤，改成直接顯示台北時間（手機分兩行）
+				.andExpect(content().string(Matchers.not(Matchers.containsString("navbar-toggler"))))
+				.andExpect(content().string(Matchers.containsString("v2-clock")))
 				.andExpect(content().string(Matchers.containsString("col-12 col-md-6 col-xl")));
 		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
 				.andExpect(content().string(Matchers.containsString("v2-table-cards")))
@@ -195,6 +200,26 @@ class V2PageControllerTest {
 				.andExpect(content().string(Matchers.containsString("v2-card-actions")));
 		mockMvc.perform(get("/v2/buy"))
 				.andExpect(content().string(Matchers.containsString("col-12 col-lg-8")));
+	}
+
+	@Test
+	void 標籤設計_市場別收盤日期收益率_損益欄只在明細() throws Exception {
+		// D-54
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.containsString("class=\"v2-market v2-market-twse\"")))  // 上市標籤
+				.andExpect(content().string(Matchers.containsString("v2-date-chip")))                         // 收盤價日期
+				.andExpect(content().string(Matchers.containsString("v2-pct v2-pct-up")))                     // 摘要卡收益率（+5.50%、+13.62%）
+				.andExpect(content().string(Matchers.containsString("bi-caret-up-fill")))
+				// 持股表不再有未實現、已實現損益兩欄（摘要卡的標題仍在）
+				.andExpect(content().string(Matchers.not(Matchers.containsString(">未實現損益</th>"))))
+				.andExpect(content().string(Matchers.not(Matchers.containsString(">已實現損益</th>"))))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("data-label=\"未實現損益\""))));
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.containsString("class=\"v2-market v2-market-twse\"")))
+				.andExpect(content().string(Matchers.containsString("v2-pct v2-pct-up")))
+				.andExpect(content().string(Matchers.containsString(">已實現損益</th>")));                     // 明細的交易表照舊有
 	}
 
 	@Test
@@ -374,7 +399,7 @@ class V2PageControllerTest {
 
 		mockMvc.perform(get("/v2/buy").param("code", "２３３０"))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("fixedCode: \"2330\"")))
+				.andExpect(content().string(Matchers.containsString("\"fixedCode\": \"2330\"")))
 				.andExpect(content().string(Matchers.containsString("\"total_cost\":\"368022.75\"")))
 				.andExpect(content().string(Matchers.containsString("\"shares\":600")))
 				// C8-6 b：內附 2021～2027 的休市日（例如 2025 農曆除夕）放進頁面，開頁不查官方
@@ -387,7 +412,7 @@ class V2PageControllerTest {
 	void 買進頁_記一筆買進_代號自己輸入() throws Exception {
 		mockMvc.perform(get("/v2/buy"))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("fixedCode: null")));
+				.andExpect(content().string(Matchers.containsString("\"fixedCode\": null")));
 	}
 
 	@Test
@@ -396,12 +421,115 @@ class V2PageControllerTest {
 
 		mockMvc.perform(get("/v2/sell").param("code", "2330"))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("code: \"2330\"")))
+				.andExpect(content().string(Matchers.containsString("\"code\": \"2330\"")))
 				.andExpect(content().string(Matchers.containsString("\"shares\":600")))
 				.andExpect(content().string(Matchers.containsString("\"total_cost\":\"368022.75\"")))
-				// 成功訊息要顯示公司名稱。Thymeleaf 放進 JavaScript 時把中文轉成 \\u 跳脫（合法的 JS，執行時就是「台積電」）
-				.andExpect(content().string(Matchers.containsString("name: \"\\u53F0\\u7A4D\\u96FB\"")))
+				// 成功訊息要顯示公司名稱。Thymeleaf 把中文轉成 \\u 跳脫（合法的 JSON，JSON.parse 後就是「台積電」）
+				.andExpect(content().string(Matchers.containsString("\"name\": \"\\u53F0\\u7A4D\\u96FB\"")))
 				.andExpect(content().string(Matchers.containsString("全部賣出")));
+	}
+
+	// ===== 對話框（D-53）：?dialog=1 只回表單片段；頁面資料是合法 JSON（前端用 JSON.parse 讀） =====
+
+	@Test
+	void 對話框_買進賣出修改加dialog參數_只回表單片段_沒有頁首() throws Exception {
+		buyAndSell2330();
+		Trade trade = tradeRepository.findAll().get(0);
+
+		for (String url : new String[] { "/v2/buy?dialog=1", "/v2/buy?code=2330&dialog=1", "/v2/sell?code=2330&dialog=1",
+				"/v2/trades/" + trade.getId() + "/edit?dialog=1" }) {
+			mockMvc.perform(get(url))
+					.andExpect(status().isOk())
+					.andExpect(content().string(Matchers.containsString("data-v2-form=")))
+					.andExpect(content().string(Matchers.containsString("class=\"v2-form-data\"")))
+					.andExpect(content().string(Matchers.containsString("data-v2-cancel")))
+					.andExpect(content().string(Matchers.not(Matchers.containsString("<nav"))))      // 沒有頁首
+					.andExpect(content().string(Matchers.not(Matchers.containsString("<html"))));
+		}
+	}
+
+	@Test
+	void 對話框_三種表單的頁面資料都是合法JSON() throws Exception {
+		buyAndSell2330();
+		Trade trade = tradeRepository.findAll().get(0);
+
+		JsonNode buy = formData("/v2/buy?code=2330");
+		assertThat(buy.get("fixedCode").asText()).isEqualTo("2330");
+		assertThat(buy.get("held").get("2330").get("shares").asLong()).isEqualTo(600);
+		assertThat(buy.get("closedDays").get("2025").isArray()).isTrue();
+
+		JsonNode sell = formData("/v2/sell?code=2330");
+		assertThat(sell.get("name").asText()).isEqualTo("台積電");
+		assertThat(sell.get("held").get("total_cost").asText()).isEqualTo("368022.75");
+		assertThat(sell.get("bondEtfExempt").get("until").asText()).isNotBlank();
+
+		JsonNode edit = formData("/v2/trades/" + trade.getId() + "/edit");
+		assertThat(edit.get("tradeId").asLong()).isEqualTo(trade.getId());
+		assertThat(edit.get("side").asText()).isEqualTo("BUY");
+		assertThat(edit.get("shares").asLong()).isEqualTo(300);
+
+		assertThat(formData("/v2/buy").get("fixedCode").isNull()).isTrue();
+	}
+
+	@Test
+	void 對話框_總覽與明細的買進賣出修改連結會開對話框() throws Exception {
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.containsString("id=\"v2-form-dialog\"")))
+				.andExpect(content().string(Matchers.containsString("data-v2-dialog href=\"/v2/buy?code=2330\"")))
+				.andExpect(content().string(Matchers.containsString("/js/v2-forms.js")));
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.containsString("id=\"v2-form-dialog\"")))
+				.andExpect(content().string(Matchers.containsString("data-v2-dialog href=\"/v2/trades/")))
+				.andExpect(content().string(Matchers.containsString("/js/v2-forms.js")));
+	}
+
+	@Test
+	void 版面調整_頁首時間_試算說明在算式下方_明細置中_賣出不顯示資料時間() throws Exception {
+		// D-56
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.not(Matchers.containsString(">持股總覽</a>"))))  // 頁籤拿掉，logo 連回總覽
+				.andExpect(content().string(Matchers.containsString("title=\"回持股總覽\"")))
+				.andExpect(content().string(Matchers.containsString("（台北時間）")));
+		mockMvc.perform(get("/v2/buy?dialog=1"))
+				.andExpect(content().string(Matchers.containsString("<span>＋ 手續費</span>")))
+				.andExpect(content().string(Matchers.containsString("手續費：0.1425%，捨去到元，最低 20 元")))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("會向官方確認代號，最多需要約 10 秒"))));
+		mockMvc.perform(get("/v2/sell?code=2330&dialog=1"))
+				.andExpect(content().string(Matchers.containsString("id=\"calc-tax-rate\"")))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("held-time"))))
+				.andExpect(content().string(Matchers.containsString("flex-wrap")));
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.containsString("<th class=\"v2-center\">買賣</th>")))
+				.andExpect(content().string(Matchers.containsString("<th class=\"v2-num v2-center\">交易後股數</th>")))
+				.andExpect(content().string(Matchers.containsString("v2-modal-form")));
+	}
+
+	@Test
+	void 對話框_表單三行_明細有確認對話框_總覽置中() throws Exception {
+		// D-55：日期自己一行、數量＋價格一行（col-md-6）；刪除確認用網站自己的對話框；總覽的市場～操作置中
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2/buy?dialog=1"))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("col-md-3"))))
+				.andExpect(content().string(Matchers.containsString("class=\"col-12 col-md-6\"")));
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(content().string(Matchers.containsString("id=\"v2-confirm\"")))
+				.andExpect(content().string(Matchers.containsString("modal-lg")));
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.containsString("<th class=\"v2-center\">市場</th>")))
+				.andExpect(content().string(Matchers.containsString("<th class=\"v2-center\">操作</th>")));
+	}
+
+	/** 取出頁面裡 <script type="application/json" class="v2-form-data"> 的內容，用 Jackson 解析（不合法就會丟例外） */
+	private JsonNode formData(String url) throws Exception {
+		String html = mockMvc.perform(get(url)).andReturn().getResponse().getContentAsString();
+		Matcher matcher = Pattern.compile("class=\"v2-form-data\"[^>]*>(.*?)</script>", Pattern.DOTALL).matcher(html);
+		assertThat(matcher.find()).as(url + " 找不到 v2-form-data").isTrue();
+		return new ObjectMapper().readTree(matcher.group(1));
 	}
 
 	@Test
@@ -438,9 +566,9 @@ class V2PageControllerTest {
 
 		mockMvc.perform(get("/v2/trades/{id}/edit", trade.getId()))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("tradeId: " + trade.getId())))
-				.andExpect(content().string(Matchers.containsString("version: " + trade.getVersion())))
-				.andExpect(content().string(Matchers.containsString("shares: 1000")))
+				.andExpect(content().string(Matchers.containsString("\"tradeId\": " + trade.getId())))
+				.andExpect(content().string(Matchers.containsString("\"version\": " + trade.getVersion())))
+				.andExpect(content().string(Matchers.containsString("\"shares\": 1000")))
 				.andExpect(content().string(Matchers.containsString("value=\"600.00\"")))
 				.andExpect(content().string(Matchers.containsString("value=\"" + trade.getTradeDate() + "\""))) // YYYY-MM-DD
 				.andExpect(content().string(Matchers.containsString("日期是<strong>推估</strong>的")));
@@ -454,7 +582,7 @@ class V2PageControllerTest {
 
 		mockMvc.perform(get("/v2/trades/{id}/edit", brokenSell.getId()))
 				.andExpect(status().isOk())
-				.andExpect(content().string(Matchers.containsString("side: \"SELL\"")));
+				.andExpect(content().string(Matchers.containsString("\"side\": \"SELL\"")));
 	}
 
 	@Test

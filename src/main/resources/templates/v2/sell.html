@@ -14,6 +14,8 @@
 
 	<main class="container v2-form-page py-4">
 		<a th:href="@{/v2}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> 回持股總覽</a>
+		<!--/* dialog 片段（D-53）：對話框打開時伺服器只回這一段（/v2/sell?code=…&dialog=1），獨立頁面也用同一段 */-->
+		<div th:fragment="dialog" data-v2-form="sell">
 		<h1 class="h4 mt-2 mb-3 v2-page-title v2-sell">
 			賣出 <span th:text="${holding.code}">2330</span> <span th:text="${holding.name}">台積電</span>
 		</h1>
@@ -24,10 +26,10 @@
 		<div class="row g-4">
 			<div class="col-12 col-lg-8">
 				<!-- 目前持有（只顯示）：灰底；被另一個裝置改過時會重新讀取 -->
-				<div class="v2-info mb-3 d-flex align-items-center">
-					<div class="me-4">持有 <strong class="fs-5" id="held-shares"></strong> 股</div>
-					<div class="me-4">平均成本 <strong id="held-avg"></strong> 元</div>
-					<div class="ms-auto small text-secondary" id="held-time"></div>
+				<!--/* D-56：flex-wrap → 數字太長時「平均成本」換到下一行；「資料時間」拿掉（使用者決定） */-->
+				<div class="v2-info mb-3 d-flex flex-wrap align-items-center column-gap-4 row-gap-1">
+					<div class="text-nowrap">持有 <strong class="fs-5" id="held-shares"></strong> 股</div>
+					<div class="text-nowrap">平均成本 <strong id="held-avg"></strong> 元</div>
 				</div>
 
 				<div class="v2-section">
@@ -38,13 +40,16 @@
 					</div>
 					<form id="sell-form" class="p-4" novalidate>
 						<div class="row g-3 mb-3">
-							<div class="col-12 col-md-3">
+							<!--/* 表單三行（D-55）：代號（買進才有）→ 日期 → 數量＋價格 */-->
+							<div class="col-12 col-md-6">
 								<label for="date" class="form-label">賣出日期</label>
 								<input id="date" type="date" class="form-control">
 								<div id="date-feedback" class="invalid-feedback"></div>
 								<div id="date-warning" class="form-text"></div>
 							</div>
-							<div class="col-12 col-md-5">
+							</div>
+							<div class="row g-3 mb-3">
+							<div class="col-12 col-md-6">
 								<label for="quantity" class="form-label d-flex">
 									<span class="me-auto">數量</span>
 									<a href="#" id="sell-all" class="small text-decoration-none">全部賣出</a>
@@ -59,7 +64,7 @@
 								</div>
 								<div id="quantity-hint" class="form-text"></div>
 							</div>
-							<div class="col-12 col-md-4">
+							<div class="col-12 col-md-6">
 								<label for="price" class="form-label">每股價格</label>
 								<div class="input-group has-validation">
 									<input id="price" class="form-control text-end" inputmode="decimal" autocomplete="off">
@@ -69,7 +74,7 @@
 							</div>
 						</div>
 						<div class="d-flex justify-content-end gap-2">
-							<a th:href="@{/v2}" class="btn btn-outline-secondary">取消</a>
+							<a th:href="@{/v2}" class="btn btn-outline-secondary" data-v2-cancel>取消</a>
 							<button type="submit" class="btn btn-v2"><i class="bi bi-check-lg me-1"></i>確認賣出</button>
 						</div>
 					</form>
@@ -84,173 +89,38 @@
 						<div id="calc-body" class="d-none">
 							<div class="v2-calc-row"><span>賣出金額</span><span class="v2-num" id="calc-amount"></span></div>
 							<div class="v2-calc-row"><span>− 手續費</span><span class="v2-num" id="calc-fee"></span></div>
-							<div class="v2-calc-row"><span id="calc-tax-label">− 證交稅</span><span class="v2-num" id="calc-tax"></span></div>
+							<div class="v2-calc-row"><span>− 證交稅</span><span class="v2-num" id="calc-tax"></span></div>
 							<div class="v2-calc-row"><span>− 這次賣出分攤的成本</span><span class="v2-num" id="calc-cost"></span></div>
 							<div class="v2-calc-row v2-calc-total"><span>已實現損益</span><span class="v2-num" id="calc-pnl"></span></div>
 							<div class="v2-calc-row text-secondary mt-3"><span>賣出後剩下</span><span class="v2-num" id="calc-left"></span></div>
-							<div class="small text-secondary mt-2">平均成本法：賣出不會改變剩下股票的平均成本。試算以目前持股計算，補登過去日期時以伺服器重算為準</div>
+							<!--/* 算法說明放在算式下方（D-56，和買進相同）；證交稅率依代號與賣出日期由 v2-forms.js 填入 */-->
+							<div class="v2-calc-notes">
+								<div>手續費：0.1425%，捨去到元，最低 20 元</div>
+								<div>證交稅：<span id="calc-tax-rate">0.3%</span></div>
+								<div>平均成本法：賣出不會改變剩下股票的平均成本。試算以目前持股計算，補登過去日期時以伺服器重算為準</div>
+							</div>
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
+		<!--/* 伺服器放進來的資料（JSON，理由同買進頁）；債券 ETF 停徵證交稅的期間在後端設定（第 7 題回報二） */-->
+		<script type="application/json" class="v2-form-data" th:inline="javascript">
+			{
+				"code": /*[[${holding.code}]]*/ "2330",
+				"name": /*[[${holding.name}]]*/ "台積電",
+				"held": /*[[${held}]]*/ {},
+				"closedDays": /*[[${closedDays}]]*/ {},
+				"bondEtfExempt": { "from": /*[[${bondEtfExemptFrom}]]*/ "2017-01-01", "until": /*[[${bondEtfExemptUntil}]]*/ "2026-12-31" }
+			}
+		</script>
+		</div>
 	</main>
 
 	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
 	<script th:src="@{/js/v2-form.js}"></script>
-	<script th:inline="javascript">
-		window.V2_PAGE = {
-			code: /*[[${holding.code}]]*/ '2330',
-			name: /*[[${holding.name}]]*/ '台積電',
-			held: /*[[${held}]]*/ {},
-			closedDays: /*[[${closedDays}]]*/ {},
-			// 債券 ETF 停徵證交稅的期間（第 7 題回報二；期限在後端設定）
-			bondEtfExempt: { from: /*[[${bondEtfExemptFrom}]]*/ '2017-01-01', until: /*[[${bondEtfExemptUntil}]]*/ '2026-12-31' }
-		};
-	</script>
-	<script>
-		(function () {
-			'use strict';
-			const PAGE = window.V2_PAGE;
-			const code = PAGE.code;
-			// 持有股數與成本（BigInt、以分計）：開頁時由伺服器放進來；賣超被擋時重新讀取
-			let heldShares = BigInt(PAGE.held.shares);
-			let heldCostCents = V2Form.plainToCents(PAGE.held.total_cost);
-
-			const form = document.getElementById('sell-form');
-			const date = document.getElementById('date');
-			const price = document.getElementById('price');
-			date.value = V2Form.todayInTaipei();
-
-			function renderHolding() {
-				document.getElementById('held-shares').textContent = V2Form.withCommas(heldShares);
-				document.getElementById('held-avg').textContent = heldShares > 0n
-					? V2Form.formatCents(V2Form.avgCents(heldCostCents, heldShares)) : '—';
-				const now = new Intl.DateTimeFormat('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
-				document.getElementById('held-time').textContent = '資料時間 ' + now + '（台北時間）';
-			}
-
-			const quantity = V2Form.bindQuantity({
-				input: document.getElementById('quantity'),
-				unitName: 'unit',
-				hint: document.getElementById('quantity-hint'),
-				// 打字當下就檢查「不能超過持有」
-				extraCheck: function (shares) {
-					return shares > heldShares
-						? '不能超過持有的 ' + V2Form.withCommas(heldShares) + ' 股' + (heldShares >= 1000n ? '（' + V2Form.sharesToLotText(heldShares) + ' 張）' : '')
-						: null;
-				},
-				onChange: recalc
-			});
-			document.getElementById('quantity').addEventListener('blur', function () {
-				if (this.value !== '') {
-					quantity.check();
-				}
-			});
-			V2Form.bindPrice(price, recalc);
-			const dateField = V2Form.bindDate(date, PAGE.closedDays, recalc);
-
-			function recalc() {
-				const q = quantity.shares();
-				const p = V2Form.parsePrice(price.value);
-				const ready = !q.error && !p.error;
-				document.getElementById('calc-empty').classList.toggle('d-none', ready);
-				document.getElementById('calc-body').classList.toggle('d-none', !ready);
-				if (!ready) {
-					return;
-				}
-				const amount = q.shares * p.cents;
-				const fee = V2Form.feeYuan(amount) * 100n;
-				const taxExempt = V2Form.isBondEtfTaxExempt(code, date.value, PAGE.bondEtfExempt);
-				const tax = V2Form.taxYuan(code, amount, date.value, PAGE.bondEtfExempt) * 100n;
-				// 分攤成本：全部賣出 → 剩下的成本全部；否則 成本 × 賣出股數 ÷ 持有股數，四捨五入到分（和後端相同）
-				const cost = q.shares === heldShares
-					? heldCostCents
-					: (heldCostCents * q.shares * 2n + heldShares) / (heldShares * 2n);
-				const pnl = amount - fee - tax - cost;
-				document.getElementById('calc-amount').textContent = V2Form.formatCents(amount);
-				document.getElementById('calc-fee').textContent = V2Form.formatCents(fee);
-				document.getElementById('calc-tax-label').textContent = '− 證交稅（'
-					+ (taxExempt ? '債券 ETF 停徵' : code.startsWith('00') ? 'ETF 0.1%' : '0.3%') + '）';
-				document.getElementById('calc-tax').textContent = V2Form.formatCents(tax);
-				document.getElementById('calc-cost').textContent = V2Form.formatCents(cost);
-				const pnlCell = document.getElementById('calc-pnl');
-				pnlCell.textContent = (pnl > 0n ? '+' : '') + V2Form.formatCents(pnl);
-				pnlCell.className = 'v2-num ' + (pnl > 0n ? 'text-profit' : pnl < 0n ? 'text-loss' : '');
-				document.getElementById('calc-left').textContent = V2Form.withCommas(heldShares - q.shares) + ' 股';
-			}
-
-			document.getElementById('sell-all').addEventListener('click', function (event) {
-				event.preventDefault();
-				if (document.getElementById('quantity').readOnly) {
-					return; // 送出中（輸入框是唯讀）不能改
-				}
-				quantity.setShares(heldShares); // 依目前單位填入（股：600；張：0.6）
-				price.focus();
-			});
-
-			/** 重新讀取持有股數（另一個裝置可能已經賣掉一部分）：GET /api/v2/holdings/{code} */
-			function reloadHolding() {
-				fetch('/api/v2/holdings/' + encodeURIComponent(code), { headers: { 'Accept': 'application/json' } })
-					.then(function (response) { return response.ok ? response.json() : null; })
-					.then(function (holding) {
-						if (!holding || holding.shares === null) {
-							return; // 持股已刪除或資料異常：錯誤訊息已說明
-						}
-						heldShares = BigInt(holding.shares);
-						heldCostCents = V2Form.plainToCents(holding.total_cost);
-						renderHolding();
-						quantity.check();
-						recalc();
-					})
-					.catch(function () {
-						// 讀不到就維持原本的數字；送出時伺服器仍會再檢查
-					});
-			}
-
-			renderHolding();
-			document.getElementById('quantity').focus();
-			V2Form.bindSubmit(form, {
-				validate: function () {
-					const results = [
-						dateField.check(),
-						quantity.check(),
-						(function () { const m = V2Form.parsePrice(price.value).error; V2Form.showError(price, m); return !m; })(),
-						// 股數 × 價格最多 100 億元（防多打 0；朋友回饋 3）。要放在數量、價格檢查之後
-						V2Form.checkAmount(quantity, document.getElementById('quantity'), price)
-					];
-					return results.every(Boolean);
-				},
-				confirm: dateField.confirmTradingDay,
-				request: function () {
-					return {
-						method: 'POST',
-						url: '/api/v2/holdings/' + encodeURIComponent(code) + '/trades',
-						body: {
-							side: 'SELL',
-							trade_date: date.value,
-							shares: Number(quantity.shares().shares),
-							price: V2Form.centsToPlain(V2Form.parsePrice(price.value).cents)
-						}
-					};
-				},
-				onSuccess: function (data) {
-					// 寫入後剛好被另一個裝置改成資料異常時，算不出的欄位是 null（極少見）→ 只說記錄了幾股
-					const pnl = data.trade ? V2Form.plainToCents(data.trade.realized_pnl) : null;
-					// 格式：動作 代號 名稱 股數（已實現損益放括號）：股數和金額分開，避免把「22 股」和「−24,761.31」看成一起
-					return {
-						message: '已記錄：賣出 ' + code + ' ' + (PAGE.name || '') + ' ' + V2Form.withCommas(quantity.shares().shares) + ' 股'
-							+ (pnl === null ? '' : '（已實現損益 ' + (pnl > 0n ? '+' : '') + V2Form.formatCents(pnl) + ' 元）'),
-						redirect: '/v2'
-					};
-				},
-				onError: function (result) {
-					if (result.error && result.error.code === 'OVERSELL') {
-						reloadHolding(); // 例如手機剛賣掉一部分：顯示最新持有股數
-					}
-				}
-			});
-		})();
-	</script>
+	<!--/* 表單程式在 v2-forms.js（D-53：獨立頁面和總覽、明細的對話框共用同一份）；伺服器的資料在上面的 .v2-form-data */-->
+	<script th:src="@{/js/v2-forms.js}"></script>
+	<script>V2Forms.initPage();</script>
 </body>
 </html>

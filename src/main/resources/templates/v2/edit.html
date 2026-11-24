@@ -16,6 +16,8 @@
 		<a th:href="@{/v2/holdings/{code}(code=${holding.code})}" class="small text-decoration-none">
 			<i class="bi bi-arrow-left"></i> 回 <span th:text="${holding.code}">2330</span> 交易明細
 		</a>
+		<!--/* dialog 片段（D-53）：明細的「修改」用對話框打開時伺服器只回這一段（/v2/trades/{id}/edit?dialog=1），獨立頁面也用同一段 */-->
+		<div th:fragment="dialog" data-v2-form="edit">
 		<h1 class="h4 mt-2 mb-3 v2-page-title" th:classappend="${trade.side == 'BUY'} ? 'v2-buy' : 'v2-sell'">
 			修改<span th:text="${trade.side == 'BUY'} ? '買進' : '賣出'">買進</span>
 			<span th:text="${holding.code}">2330</span> <span th:text="${holding.name}">台積電</span>
@@ -39,14 +41,17 @@
 					</div>
 					<form id="edit-form" class="p-4" novalidate>
 						<div class="row g-3 mb-3">
-							<div class="col-12 col-md-3">
+							<!--/* 表單三行（D-55）：代號（買進才有）→ 日期 → 數量＋價格 */-->
+							<div class="col-12 col-md-6">
 								<label for="date" class="form-label" th:text="${trade.side == 'BUY'} ? '買進日期' : '賣出日期'">買進日期</label>
 								<!--/* type="date" 的值一定要是 YYYY-MM-DD，明確指定格式（不依地區格式） */-->
 								<input id="date" type="date" class="form-control" th:value="${#temporals.format(trade.tradeDate, 'yyyy-MM-dd')}">
 								<div id="date-feedback" class="invalid-feedback"></div>
 								<div id="date-warning" class="form-text"></div>
 							</div>
-							<div class="col-12 col-md-5">
+							</div>
+							<div class="row g-3 mb-3">
+							<div class="col-12 col-md-6">
 								<label for="quantity" class="form-label">數量</label>
 								<div class="input-group has-validation">
 									<input id="quantity" class="form-control text-end" inputmode="decimal" autocomplete="off">
@@ -58,7 +63,7 @@
 								</div>
 								<div id="quantity-hint" class="form-text"></div>
 							</div>
-							<div class="col-12 col-md-4">
+							<div class="col-12 col-md-6">
 								<label for="price" class="form-label">每股價格</label>
 								<div class="input-group has-validation">
 									<input id="price" class="form-control text-end" inputmode="decimal" autocomplete="off" th:value="${trade.price}">
@@ -68,7 +73,7 @@
 							</div>
 						</div>
 						<div class="d-flex justify-content-end gap-2">
-							<a th:href="@{/v2/holdings/{code}(code=${holding.code})}" class="btn btn-outline-secondary">取消</a>
+							<a th:href="@{/v2/holdings/{code}(code=${holding.code})}" class="btn btn-outline-secondary" data-v2-cancel>取消</a>
 							<button type="submit" class="btn btn-v2"><i class="bi bi-check-lg me-1"></i>儲存修改</button>
 						</div>
 					</form>
@@ -84,6 +89,11 @@
 							<div class="v2-calc-row"><span>成交金額</span><span class="v2-num" id="calc-amount"></span></div>
 							<div class="v2-calc-row"><span>手續費</span><span class="v2-num" id="calc-fee"></span></div>
 							<div class="v2-calc-row" th:if="${trade.side == 'SELL'}"><span>證交稅</span><span class="v2-num" id="calc-tax"></span></div>
+							<!--/* 算法說明放在算式下方（D-56，和買進、賣出相同） */-->
+							<div class="v2-calc-notes">
+								<div>手續費：0.1425%，捨去到元，最低 20 元</div>
+								<div th:if="${trade.side == 'SELL'}">證交稅：一般股票 0.3%、ETF 0.1%（債券 ETF 停徵期間不收）</div>
+							</div>
 						</div>
 						<div class="small text-secondary mt-2">
 							儲存後這一檔的交易會依日期從頭重算（平均成本、已實現損益、之後每一筆的持有股數）；
@@ -98,97 +108,26 @@
 				</div>
 			</div>
 		</div>
+		<!--/* 伺服器放進來的資料（JSON，理由同買進頁）：版本號是打開時的值，送出時帶上（另一個裝置改過就會被拒絕） */-->
+		<script type="application/json" class="v2-form-data" th:inline="javascript">
+			{
+				"code": /*[[${holding.code}]]*/ "2330",
+				"name": /*[[${holding.name}]]*/ "台積電",
+				"tradeId": /*[[${trade.id}]]*/ 1,
+				"side": /*[[${trade.side}]]*/ "BUY",
+				"shares": /*[[${trade.shares}]]*/ 300,
+				"version": /*[[${trade.version}]]*/ 0,
+				"closedDays": /*[[${closedDays}]]*/ {},
+				"bondEtfExempt": { "from": /*[[${bondEtfExemptFrom}]]*/ "2017-01-01", "until": /*[[${bondEtfExemptUntil}]]*/ "2026-12-31" }
+			}
+		</script>
+		</div>
 	</main>
 
 	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
 	<script th:src="@{/js/v2-form.js}"></script>
-	<script th:inline="javascript">
-		window.V2_PAGE = {
-			code: /*[[${holding.code}]]*/ '2330',
-			name: /*[[${holding.name}]]*/ '台積電',
-			tradeId: /*[[${trade.id}]]*/ 1,
-			side: /*[[${trade.side}]]*/ 'BUY',
-			shares: /*[[${trade.shares}]]*/ 300,
-			version: /*[[${trade.version}]]*/ 0,
-			closedDays: /*[[${closedDays}]]*/ {},
-			bondEtfExempt: { from: /*[[${bondEtfExemptFrom}]]*/ '2017-01-01', until: /*[[${bondEtfExemptUntil}]]*/ '2026-12-31' }
-		};
-	</script>
-	<script>
-		(function () {
-			'use strict';
-			const PAGE = window.V2_PAGE;
-			const form = document.getElementById('edit-form');
-			const date = document.getElementById('date');
-			const price = document.getElementById('price');
-
-			const quantity = V2Form.bindQuantity({
-				input: document.getElementById('quantity'),
-				unitName: 'unit',
-				hint: document.getElementById('quantity-hint'),
-				onChange: recalc
-			});
-			document.getElementById('quantity').addEventListener('blur', function () {
-				if (this.value !== '') {
-					quantity.check();
-				}
-			});
-			V2Form.bindPrice(price, recalc);
-			const dateField = V2Form.bindDate(date, PAGE.closedDays, recalc);
-			quantity.setShares(BigInt(PAGE.shares)); // 原本的股數，依記住的單位顯示（張：0.3）
-
-			function recalc() {
-				const q = quantity.shares();
-				const p = V2Form.parsePrice(price.value);
-				const ready = !q.error && !p.error;
-				document.getElementById('calc-empty').classList.toggle('d-none', ready);
-				document.getElementById('calc-body').classList.toggle('d-none', !ready);
-				if (!ready) {
-					return;
-				}
-				const amount = q.shares * p.cents;
-				document.getElementById('calc-amount').textContent = V2Form.formatCents(amount);
-				document.getElementById('calc-fee').textContent = V2Form.formatCents(V2Form.feeYuan(amount) * 100n);
-				const tax = document.getElementById('calc-tax');
-				if (tax) {
-					tax.textContent = V2Form.formatCents(V2Form.taxYuan(PAGE.code, amount, date.value, PAGE.bondEtfExempt) * 100n);
-				}
-			}
-
-			V2Form.bindSubmit(form, {
-				validate: function () {
-					const results = [
-						dateField.check(),
-						quantity.check(),
-						(function () { const m = V2Form.parsePrice(price.value).error; V2Form.showError(price, m); return !m; })(),
-						// 股數 × 價格最多 100 億元（防多打 0；朋友回饋 3）。要放在數量、價格檢查之後
-						V2Form.checkAmount(quantity, document.getElementById('quantity'), price)
-					];
-					return results.every(Boolean);
-				},
-				confirm: dateField.confirmTradingDay,
-				request: function () {
-					return {
-						method: 'PUT',
-						url: '/api/v2/trades/' + PAGE.tradeId,
-						body: {
-							trade_date: date.value,
-							shares: Number(quantity.shares().shares),
-							price: V2Form.centsToPlain(V2Form.parsePrice(price.value).cents),
-							version: PAGE.version // 頁面打開時的版本號：另一個裝置改過就會被拒絕（409），不會覆蓋
-						}
-					};
-				},
-				onSuccess: function () {
-					return {
-						// 格式和買進、賣出相同：動作 代號 名稱 股數（日期放最後的括號）
-						message: '已修改：' + (PAGE.side === 'BUY' ? '買進' : '賣出') + ' ' + PAGE.code + ' ' + (PAGE.name || '') + ' '
-							+ V2Form.withCommas(quantity.shares().shares) + ' 股（' + date.value + '）',
-						redirect: '/v2/holdings/' + encodeURIComponent(PAGE.code)
-					};
-				}
-			});
-		})();
-	</script>
+	<!--/* 表單程式在 v2-forms.js（D-53：獨立頁面和總覽、明細的對話框共用同一份）；伺服器的資料在上面的 .v2-form-data */-->
+	<script th:src="@{/js/v2-forms.js}"></script>
+	<script>V2Forms.initPage();</script>
 </body>
 </html>

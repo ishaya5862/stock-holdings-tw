@@ -19,11 +19,15 @@
 		<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
 			<h1 class="h4 mb-0 me-auto">
 				<span th:text="${holding.code}">2330</span> <span th:text="${holding.name}">台積電</span>
-				<small class="text-secondary fs-6 ms-1" th:text="${@v2Formats.market(holding.market)}">上市</small>
+				<!--/* 市場別標籤（D-54，和總覽的持股表相同樣式） */-->
+				<span class="fs-6 ms-1 align-middle"><span th:replace="~{v2/fragments :: market(${holding.market})}">上市</span></span>
 			</h1>
-			<a class="btn btn-outline-danger me-2" th:href="@{/v2/buy(code=${holding.code})}">買進</a>
-			<a th:if="${holding.shares != null and holding.shares > 0}" class="btn btn-outline-success"
-				th:href="@{/v2/sell(code=${holding.code})}">賣出</a>
+			<!--/* 兩個按鈕包在一起（D-58）：手機寬度放不下時一起換到下一行，不會只剩「賣出」掉下去 */-->
+			<div class="d-flex gap-2">
+				<a class="btn btn-outline-danger" data-v2-dialog th:href="@{/v2/buy(code=${holding.code})}">買進</a>
+				<a th:if="${holding.shares != null and holding.shares > 0}" class="btn btn-outline-success"
+					data-v2-dialog th:href="@{/v2/sell(code=${holding.code})}">賣出</a>
+			</div>
 		</div>
 
 		<!--/* 資料異常：說明原因，請修改或刪除錯的那一筆（朋友回饋 1-1 a）；交易照樣列在下面 */-->
@@ -67,7 +71,7 @@
 						class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(holding.unrealizedPnl)}">
 						<!--/* 摘要卡：完整金額＋單位「元」，不簡寫（優化 v2-number-display）；沒有值（—）時不加單位 */-->
 						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardSignedMoney(${holding.unrealizedPnl})}">+20,252.25</span><span th:if="${holding.unrealizedPnl != null}" class="v2-unit">元</span></span>
-						<small class="fs-6" th:text="${@v2Formats.signedPct(holding.returnPct)}">+5.50%</small>
+						<span th:replace="~{v2/fragments :: pctBadge(${holding.returnPct})}">+5.50%</span>
 					</div>
 				</div>
 			</div>
@@ -77,7 +81,7 @@
 					<div class="v2-stat-label" title="收益率 = 已實現損益 ÷ 賣出部分的成本（含買進手續費）">已實現損益（累計）</div>
 					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(holding.realizedPnl)}">
 						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardSignedMoney(${holding.realizedPnl})}">+16,706.75</span><span th:if="${holding.realizedPnl != null}" class="v2-unit">元</span></span>
-						<small class="fs-6" th:text="${@v2Formats.signedPct(holding.realizedReturnPct)}">+13.62%</small>
+						<span th:replace="~{v2/fragments :: pctBadge(${holding.realizedReturnPct})}">+13.62%</span>
 					</div>
 				</div>
 			</div>
@@ -89,17 +93,18 @@
 			<div class="table-responsive">
 			<!--/* v2-table-cards（D-51）：手機上每一筆交易變成一張卡片（同總覽）；data-label 是卡片上的欄位名稱 */-->
 			<table class="table align-middle v2-table v2-table-cards">
+				<!--/* 買賣～交易後股數置中（D-56，標題與數值都置中；手機卡片模式照舊靠右） */-->
 				<thead>
 					<tr>
 						<th class="ps-4">日期</th>
-						<th>買賣</th>
-						<th class="v2-num">股數</th>
-						<th class="v2-num">價格</th>
-						<th class="v2-num">成交金額</th>
-						<th class="v2-num">手續費</th>
-						<th class="v2-num">證交稅</th>
-						<th class="v2-num">已實現損益</th>
-						<th class="v2-num">交易後股數</th>
+						<th class="v2-center">買賣</th>
+						<th class="v2-num v2-center">股數</th>
+						<th class="v2-num v2-center">價格</th>
+						<th class="v2-num v2-center">成交金額</th>
+						<th class="v2-num v2-center">手續費</th>
+						<th class="v2-num v2-center">證交稅</th>
+						<th class="v2-num v2-center">已實現損益</th>
+						<th class="v2-num v2-center">交易後股數</th>
 						<th class="text-end pe-4"></th>
 					</tr>
 				</thead>
@@ -130,26 +135,26 @@
 								data-bs-content="這是 1.0 時期的舊資料，當時沒有記錄買進日期，系統先用當初記帳的日期代替。請按「修改」改成實際的買進日期，平均成本與已實現損益才會依正確的順序計算。"
 								aria-label="「推估」是什麼意思？">?</a>
 						</td>
-						<td data-label="買賣">
+						<td class="v2-center" data-label="買賣">
 							<span th:if="${t.side == 'BUY'}" class="v2-side v2-side-buy">買進</span>
 							<span th:if="${t.side == 'SELL'}" class="v2-side v2-side-sell">賣出</span>
 						</td>
 						<!--/* 股數與金額（含手續費、證交稅、已實現損益）：≥ 100 萬簡寫，滑鼠移上去或點一下看完整數字（優化 v2-number-display） */-->
-						<td class="v2-num" data-label="股數"><span th:replace="~{v2/fragments :: shortShares(${t.shares})}">300</span></td>
-						<td class="v2-num" data-label="價格"><span th:replace="~{v2/fragments :: shortMoney(${t.price})}">600.00</span></td>
-						<td class="v2-num" data-label="成交金額"><span th:replace="~{v2/fragments :: shortMoney(${t.amount})}">180,000.00</span></td>
-						<td class="v2-num" data-label="手續費"><span th:replace="~{v2/fragments :: shortMoney(${t.fee})}">256.00</span></td>
-						<td class="v2-num" data-label="證交稅"><span th:replace="~{v2/fragments :: shortMoney(${t.tax})}">—</span></td>
+						<td class="v2-num v2-center" data-label="股數"><span th:replace="~{v2/fragments :: shortShares(${t.shares})}">300</span></td>
+						<td class="v2-num v2-center" data-label="價格"><span th:replace="~{v2/fragments :: shortMoney(${t.price})}">600.00</span></td>
+						<td class="v2-num v2-center" data-label="成交金額"><span th:replace="~{v2/fragments :: shortMoney(${t.amount})}">180,000.00</span></td>
+						<td class="v2-num v2-center" data-label="手續費"><span th:replace="~{v2/fragments :: shortMoney(${t.fee})}">256.00</span></td>
+						<td class="v2-num v2-center" data-label="證交稅"><span th:replace="~{v2/fragments :: shortMoney(${t.tax})}">—</span></td>
 						<!--/* 賣出那一列：已實現損益下面用小字顯示這次的收益率（買進沒有） */-->
-						<td class="v2-num" data-label="已實現損益" th:classappend="${@v2Formats.pnlClass(t.realizedPnl)}">
+						<td class="v2-num v2-center" data-label="已實現損益" th:classappend="${@v2Formats.pnlClass(t.realizedPnl)}">
 							<span th:replace="~{v2/fragments :: shortSignedMoney(${t.realizedPnl})}">—</span>
 							<div th:if="${t.realizedReturnPct != null}" class="small"
 								th:text="${@v2Formats.signedPct(t.realizedReturnPct)}">+13.62%</div>
 						</td>
-						<td class="v2-num" data-label="交易後股數"><span th:replace="~{v2/fragments :: shortShares(${t.sharesAfter})}">300</span></td>
+						<td class="v2-num v2-center" data-label="交易後股數"><span th:replace="~{v2/fragments :: shortShares(${t.sharesAfter})}">300</span></td>
 						<td class="text-end pe-4 v2-card-actions">
 							<!--/* 修改、刪除用按鈕（D-48，原本是文字連結）：和總覽的買進／賣出／明細按鈕一致，比較好點 */-->
-							<a class="btn btn-sm btn-outline-secondary me-1" th:href="@{/v2/trades/{id}/edit(id=${t.id})}">修改</a>
+							<a class="btn btn-sm btn-outline-secondary me-1" data-v2-dialog th:href="@{/v2/trades/{id}/edit(id=${t.id})}">修改</a>
 							<!--/* 刪除：確認後由 v2-trade-delete.js 呼叫 DELETE /api/v2/trades/{id}?version=（C9） */-->
 							<button type="button" class="btn btn-sm btn-outline-danger" data-delete-trade
 								th:attr="data-trade-id=${t.id},data-version=${t.version},data-code=${holding.code},data-description=${deleteText}">刪除</button>
@@ -165,8 +170,14 @@
 		</p>
 	</main>
 
+	<!--/* 買進、賣出、修改用對話框（D-53）：有 data-v2-dialog 的連結點了不換頁；JavaScript 不能用時連結照常換頁 */-->
+	<div th:replace="~{v2/fragments :: formDialog}"></div>
+	<!--/* 刪除交易的確認對話框（D-55，取代瀏覽器內建的 confirm） */-->
+	<div th:replace="~{v2/fragments :: confirmDialog}"></div>
+
 	<th:block th:replace="~{v2/fragments :: scripts}"></th:block>
 	<script th:src="@{/js/v2-form.js}"></script>
 	<script th:src="@{/js/v2-trade-delete.js}"></script>
+	<script th:src="@{/js/v2-forms.js}"></script>
 </body>
 </html>

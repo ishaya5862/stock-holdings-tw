@@ -177,6 +177,116 @@ body {
 	color: #b7791f;
 }
 
+/* ---------- 標籤（D-54） ---------- */
+
+/*
+ * 市場別（主色調）：上市＝金黃底、墨黑字（D-57 使用者指定，和頁首「2.0」標記同一組顏色）；上櫃＝淡金底、深金色字、金色框。
+ * 刻意不用紅綠，避免和「賺、賠」的顏色混淆。
+ */
+.v2-market {
+	display: inline-block;
+	white-space: nowrap;
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.05em;
+	padding: 0.15rem 0.6rem;
+	border-radius: 0.3rem;
+	border: 1px solid transparent;
+}
+
+.v2-market-twse { background-color: var(--v2-accent); color: var(--v2-accent-text); border-color: var(--v2-accent); }
+.v2-market-tpex { background-color: #fbf3dc; color: #8a6508; border-color: var(--v2-accent); }
+
+/* 表格置中（D-55）：總覽持股表的市場～操作，標題與數值都置中。
+   不用 Bootstrap 的 text-center：它是 !important，手機卡片模式沒辦法改回靠右 */
+.v2-table .v2-center {
+	text-align: center;
+}
+
+/* 確認對話框（D-55）：內容裡的換行要顯示出來 */
+.v2-confirm-body {
+	white-space: pre-line;
+}
+
+/* 確認對話框裡「要刪哪一筆」另外框起來（D-56），和下面的說明分開 */
+.v2-confirm-target {
+	display: block;
+	margin-bottom: 0.75rem;
+	padding: 0.6rem 0.9rem;
+	border-left: 4px solid var(--v2-accent);
+	border-radius: 0.25rem;
+	background-color: var(--v2-panel-bg);
+	font-weight: 600;
+	white-space: normal;
+}
+
+/* 頁首的台北時間（D-56）：電腦上一行；平板以下分兩行（檔案最後的 @media） */
+.v2-clock {
+	display: inline-flex;
+	gap: 0.4rem;
+	white-space: nowrap;
+}
+
+/* 買進、賣出、修改的對話框寬度（D-56）：介於 modal-lg（800px）與 modal-xl（1140px）之間 */
+@media (min-width: 992px) {
+	.v2-modal-form {
+		--bs-modal-width: 940px;
+	}
+}
+
+/* 試算區下方的說明（手續費、證交稅的算法、試算的前提，D-56）：小字灰色，和算式分開 */
+.v2-calc-notes {
+	margin-top: 0.75rem;
+	padding-top: 0.5rem;
+	border-top: 1px dashed var(--v2-border);
+	font-size: 0.8rem;
+	color: var(--bs-secondary-color);
+}
+
+.v2-calc-notes div + div {
+	margin-top: 0.15rem;
+}
+
+/* 收盤價的日期：灰底小標籤＋日曆圖示，和價格本身分得清楚 */
+.v2-date-chip {
+	display: inline-block;
+	white-space: nowrap;
+	margin-top: 0.15rem;
+	font-size: 0.72rem;
+	font-weight: 400;
+	padding: 0.05rem 0.45rem;
+	border-radius: 0.25rem;
+	background-color: var(--v2-panel-bg);
+	border: 1px solid var(--v2-border);
+	color: var(--bs-secondary-color);
+}
+
+/* 摘要卡裡的日期標籤（明細的收盤價卡）：不要跟著大數字放大 */
+.v2-stat-value .v2-date-chip {
+	font-size: 0.8rem;
+}
+
+/* 摘要卡的收益率：有底色的小標籤＋箭頭（台股慣例：正數紅底▲、負數綠底▼、0 或沒有值灰底） */
+.v2-pct {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	white-space: nowrap;
+	vertical-align: middle;
+	font-size: 0.95rem;
+	font-weight: 600;
+	padding: 0.15rem 0.6rem;
+	border-radius: 1rem;
+}
+
+.v2-pct .bi {
+	font-size: 0.75em;
+}
+
+.v2-pct-up { background-color: #fdecea; color: var(--v2-profit); }
+.v2-pct-down { background-color: #e8f5e9; color: var(--v2-loss); }
+.v2-pct-flat { background-color: var(--v2-panel-bg); color: var(--bs-secondary-color); border: 1px solid var(--v2-border); }
+
 /* 「推估」旁邊的「?」（D-52）：小圓圈，顏色和「推估」標記相同；點一下跳出說明框（Bootstrap Popover） */
 .v2-help {
 	display: inline-flex;
@@ -334,6 +444,14 @@ body {
 	font-weight: 400;
 }
 
+/*
+ * 表格裡的紅賺綠虧（D-54 發現的問題）：Bootstrap 的 .table 會替每一格設定文字顏色
+ * （.table > :not(caption) > * > *），優先順序比單獨的 .text-profit／.text-loss 高，
+ * 所以表格裡的損益、收益率原本一直是黑色。這裡用「.v2-table td.xxx」提高優先順序。
+ */
+.v2-table td.text-profit { color: var(--v2-profit); }
+.v2-table td.text-loss { color: var(--v2-loss); }
+
 /* 已全部賣出的那一列雖然淡化，已實現損益仍是有意義的數字 → 維持紅賺綠虧 */
 .v2-table tr.v2-closed td.text-profit { color: var(--v2-profit); }
 .v2-table tr.v2-closed td.text-loss { color: var(--v2-loss); }
@@ -394,6 +512,18 @@ body {
 		color: var(--bs-secondary-color);
 	}
 
+	/* 每一行「欄位名稱……數值」之間加淡灰色細線（D-58），一行一行比較好對齊閱讀；
+	   卡片標題（代號／名稱、日期）與最下面的按鈕列不加線 */
+	.v2-table-cards td[data-label] {
+		padding: 0.45rem 0 !important;
+		border-bottom: 1px solid #ecebe7;
+	}
+
+	/* 置中的欄位（D-55）在卡片模式下照舊「名稱靠左、數值靠右」 */
+	.v2-table-cards td.v2-center {
+		text-align: right;
+	}
+
 	/* 卡片標題（代號／名稱、交易日期）：靠左、稍大 */
 	.v2-table-cards td.v2-card-title {
 		text-align: left;
@@ -441,17 +571,14 @@ body {
 		height: 1.6rem;
 		font-size: 0.85rem;
 	}
-
-	/* 頁首展開的選單：上下排列時加一點間距 */
-	.v2-navbar .navbar-collapse {
-		padding: 0.5rem 0;
-	}
 }
 
-/* 平板以下（< 992px）：頁首折疊選單展開時，時間另起一行 */
+/* 平板以下（< 992px）：頁首的台北時間分兩行（日期／時間），靠右對齊（D-56） */
 @media (max-width: 991.98px) {
-	.v2-navbar .navbar-text {
-		display: block;
-		padding-top: 0.25rem;
+	.v2-clock {
+		flex-direction: column;
+		align-items: flex-end;
+		gap: 0;
+		line-height: 1.25;
 	}
 }

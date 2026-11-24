@@ -173,6 +173,29 @@ public class V2Formats {
 		return "NO_RECENT_TRADE".equals(quoteStatus) ? "近期無成交資料" : "尚未取得收盤價";
 	}
 
+	/**
+	 * 市場別標籤的 class（D-54）：上市、上櫃用不同顏色的小標籤（v2.css 的 .v2-market-*），不只是兩個字。
+	 * 還不知道市場別 → 空字串（只顯示「—」，不加標籤樣式）。
+	 */
+	public String marketClass(String market) {
+		if ("TWSE".equals(market)) {
+			return "v2-market v2-market-twse";
+		}
+		return "TPEX".equals(market) ? "v2-market v2-market-tpex" : "";
+	}
+
+	/**
+	 * 收益率標籤的方向（D-54）：up（正，紅色▲）、down（負，綠色▼）、flat（0 或沒有值，灰色）。
+	 * 摘要卡的百分比用它決定底色與箭頭（v2.css 的 .v2-pct-*；台股慣例紅漲綠跌）。
+	 */
+	public String pctTrend(String pct) {
+		if (pct == null) {
+			return "flat";
+		}
+		int sign = new BigDecimal(pct).signum();
+		return sign > 0 ? "up" : sign < 0 ? "down" : "flat";
+	}
+
 	/** 市場別：TWSE → 上市、TPEX → 上櫃；還不知道 → — */
 	public String market(String market) {
 		if (market == null) {
