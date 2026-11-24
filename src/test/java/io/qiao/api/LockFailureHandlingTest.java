@@ -15,7 +15,6 @@ import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import io.qiao.exception.HoldingBusyException;
 import io.qiao.service.HoldingService;
 import io.qiao.service.PositionQueryService;
 
@@ -38,13 +37,14 @@ class LockFailureHandlingTest {
 	private HoldingService holdingService;
 
 	@Test
-	void API_等鎖逾時_409資料正在更新() throws Exception {
+	void API_等鎖逾時_409請使用者過幾秒再試() throws Exception {
 		when(positionQueryService.findAll()).thenThrow(new CannotAcquireLockException("Lock wait timeout exceeded"));
 
+		// 預期值寫成文字（不用常數）：訊息被不小心改掉時測試會抓到
 		mockMvc.perform(get("/api/v2/holdings"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.error.code").value("HOLDING_BUSY"))
-				.andExpect(jsonPath("$.error.message").value(HoldingBusyException.USER_MESSAGE));
+				.andExpect(jsonPath("$.error.message").value("另一個裝置正在修改這一檔，請過幾秒再試一次"));
 	}
 
 	@Test
@@ -53,6 +53,6 @@ class LockFailureHandlingTest {
 
 		mockMvc.perform(get("/holdings/{id}/edit", 1))
 				.andExpect(redirectedUrl("/holdings"))
-				.andExpect(flash().attribute("errorMessage", HoldingBusyException.USER_MESSAGE));
+				.andExpect(flash().attribute("errorMessage", "另一個裝置正在修改這一檔，請過幾秒再試一次"));
 	}
 }

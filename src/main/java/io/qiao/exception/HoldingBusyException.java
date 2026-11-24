@@ -3,10 +3,13 @@ package io.qiao.exception;
 /**
  * 等鎖超過 3 秒：同一檔持股正在被另一個請求寫入（例如手機與電腦同時操作）。2.0 第 6 題 C3-2。
  * 正常情況鎖只會佔幾毫秒，會等到 3 秒代表那邊卡住了；回 409 請稍後再試，避免 App 10 秒逾時後重送、請求越堆越多。
+ *
+ * 訊息寫出「原因」和「多久後再試」（優化 v1-friendly ④）：App 1.0 只能顯示錯誤的 message，
+ * 原本的「資料正在更新，請稍後再試」使用者不知道為什麼、要等多久。鎖通常幾毫秒就放開，所以寫「幾秒」。
  */
 public class HoldingBusyException extends RuntimeException {
 
-	public static final String USER_MESSAGE = "資料正在更新，請稍後再試";
+	public static final String USER_MESSAGE = "另一個裝置正在修改這一檔，請過幾秒再試一次";
 
 	public HoldingBusyException(Throwable cause) {
 		super(USER_MESSAGE, cause);

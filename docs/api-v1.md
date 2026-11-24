@@ -23,9 +23,9 @@
 |---|---|---|
 | `GET /api/v1/holdings` | 200，持股物件陣列（沒有持股時 `[]`） | — |
 | `GET /api/v1/holdings/{id}` | 200，持股物件 | 404 `NOT_FOUND` |
-| `POST /api/v1/holdings` | **201**，新建的持股物件（附 `Location` 標頭） | 400 `VALIDATION_ERROR`、404 `STOCK_NOT_FOUND`、409 `DUPLICATE_CODE`、503 `QUOTE_UNAVAILABLE` |
-| `PUT /api/v1/holdings/{id}` | 200，修改後的持股物件 | 400 `VALIDATION_ERROR`、404 `NOT_FOUND` |
-| `DELETE /api/v1/holdings/{id}` | **204**，沒有內容 | 404 `NOT_FOUND` |
+| `POST /api/v1/holdings` | **201**，新建的持股物件（附 `Location` 標頭） | 400 `VALIDATION_ERROR`、404 `STOCK_NOT_FOUND`、409 `DUPLICATE_CODE`、409 `UPGRADE_REQUIRED`、409 `HOLDING_BUSY`、503 `QUOTE_UNAVAILABLE` |
+| `PUT /api/v1/holdings/{id}` | 200，修改後的持股物件 | 400 `VALIDATION_ERROR`、404 `NOT_FOUND`、409 `UPGRADE_REQUIRED`、409 `HOLDING_BUSY` |
+| `DELETE /api/v1/holdings/{id}` | **204**，沒有內容 | 404 `NOT_FOUND`、409 `UPGRADE_REQUIRED`、409 `HOLDING_BUSY` |
 | `GET /api/v1/summary` | 200，總計物件 | — |
 
 - `POST` 的內容：`{"code":"2330","lots":1,"buy_price":1000}`；和網頁一樣會向證交所、櫃買中心確認代號，**最多約 10 秒**。
@@ -76,9 +76,30 @@
 | `NOT_FOUND` | 404 | 找不到這筆持股（包括 id 不是數字）、不存在的 API 路徑 |
 | `STOCK_NOT_FOUND` | 404 | 股票代號不存在（官方查無），或代號格式不可能存在（例如 `ABC`，不浪費官方查詢） |
 | `DUPLICATE_CODE` | 409 | 這個代號已在持股中 |
+| `UPGRADE_REQUIRED` | 409 | 這筆持股在 2.0 有 1.0 表達不了的資料（零股、多次買進或賣出），不能用 1.0 修改、刪除；或重新新增已全部賣光的那一檔時，它的交易資料異常。訊息請使用者改用 App 2.0 |
+| `HOLDING_BUSY` | 409 | 另一個裝置正在寫入同一檔，等超過 3 秒（正常只要幾毫秒）。訊息「另一個裝置正在修改這一檔，請過幾秒再試一次」 |
 | `QUOTE_UNAVAILABLE` | 503 | 官方行情連不上，無法確認代號（資料不儲存，請稍後再試） |
 | `METHOD_NOT_ALLOWED` | 405 | 這個路徑不支援這個 HTTP 方法 |
 | `INTERNAL_ERROR` | 500 | 伺服器發生未預期的錯誤 |
+
+## 和 App 1.0 原始規格的差異
+
+App 1.0 的原始規格只列了上面「API 一覽」中的一部分錯誤，下面是規格沒寫到、本服務自行補上的地方。
+
+**為什麼不改回和規格一字不差**：App 1.0 對所有錯誤的處理都一樣——只要不是 2xx、而且是 `{"error":{"code","message"}}` 格式，就把 `message` 顯示給使用者，不會依狀態碼做不同的事，也不會自動重送；總計的 `return_pct` 也允許 null（從 App 1.0 原始碼確認）。所以下面的狀態碼和 null 在 App 上都能正常顯示。反過來，硬塞進規格有的狀態碼會讓意思錯誤（例如 `DELETE` 規格只有 404，持股明明存在卻要回「找不到」），或要把使用者的 2.0 買賣紀錄改掉。
+
+| # | 情況 | 規格列的 | 本服務回的 | 為什麼 |
+|---|---|---|---|---|
+| 1 | `POST` 時官方行情連不上，無法確認代號 | 400、404、409 `DUPLICATE_CODE` | 503 `QUOTE_UNAVAILABLE` | 「連不上」不是「代號不存在」：回 404 會讓使用者以為代號打錯；503 表示伺服器這邊暫時不行、稍後再試即可 |
+| 2 | `PUT` 修改在 2.0 操作過的持股（零股、多次買進或賣出） | 400、404 | 409 `UPGRADE_REQUIRED` | 1.0 只有「張數＋買進價」，照改會毀掉 2.0 的買賣紀錄；使用者送的資料本身沒錯，所以不用 400 |
+| 3 | `DELETE` 刪除在 2.0 有多筆交易的持股；`POST` 重新新增已全部賣光、但交易資料異常的那一檔 | `DELETE` 只有 404；`POST` 見 #1 | 409 `UPGRADE_REQUIRED` | 持股存在，回 404 不正確；避免 1.0 使用者誤刪 2.0 的買賣紀錄 |
+| 4 | `POST`（重新新增已全部賣光的那一檔）、`PUT`、`DELETE` 時另一個裝置正在寫入同一檔，等超過 3 秒 | 同上 | 409 `HOLDING_BUSY` | 2.0 允許手機和電腦同時操作，寫入前要先鎖住那一檔才不會賣超；等太久會讓請求越堆越多，所以 3 秒後請使用者再試 |
+| 5 | 沒有持股時，總計的 `return_pct` | 沒寫可以是 null | `null` | 總盈虧 ÷ 總成本 = 0 ÷ 0，沒有意義；App 1.0 允許 null，畫面只是不顯示百分比 |
+
+其他和規格「意思」不完全相同、但狀態碼與型別都符合規格的地方：
+
+- **持股存在卻回 404**：還沒查到市場別的舊持股（規格規定 `market` 不可為 null）、交易資料異常的持股、在 2.0 全部賣光的持股（張數 0 在 1.0 不合法），清單不顯示、單筆回 404。網頁照常顯示。
+- **`lots` 可能超過 999**：規格的 1～999 是新增、修改時的輸入規則；在 2.0 累積買進超過 999 張時，v1 照實輸出。
 
 ## 輸入檢查（嚴格，不自動轉換型別）
 
