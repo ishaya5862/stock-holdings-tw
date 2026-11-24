@@ -4,21 +4,7 @@
 
 目前版本是 **2.0**（v2.0.0）：用「股」記帳（可記零股）、同一檔分多次買進、賣出一部分；App 1.0 照舊可用。
 
-| 文件 | 內容 |
-|---|---|
-| README.md（本文件） | 安裝、啟動、執行測試 |
-| [docs/setup.md](docs/setup.md) | 資料庫、密碼設定、用 jar 執行、改連自己的 MySQL |
-| [docs/features.md](docs/features.md) | 功能（網址、2.0 網頁、欄位規則）、盈虧計算規則與範例、單元測試 |
-| [docs/quote.md](docs/quote.md) | 官方行情：上市上櫃判斷、收盤價更新、更換官方網址、休市日判斷 |
-| [docs/api-v1.md](docs/api-v1.md) | 手機 App 1.0 用的 API（`/api/v1`） |
-| [API.md](API.md) | 手機 App 2.0 用的 API（`/api/v2`） |
-| [docs/design.md](docs/design.md) | 設計說明（時區、同時操作、防止重送等）、專案結構 |
-| [docs/limitations.md](docs/limitations.md) | 已知限制與之後可以怎麼做 |
-| [UPGRADE.md](UPGRADE.md) | 從 1.0 升級到 2.0：步驟、資料庫變動、回滾、上線後注意 |
-| [ISSUES.md](ISSUES.md) | 客服轉來的三則回報：原因、查證來源、處理方式 |
-| [REVIEW.md](REVIEW.md) | 回顧：遇到的問題與解法、怎麼用 AI、之後的改善 |
-| [docs/exam-progress.md](docs/exam-progress.md) | 考試時各題的完成進度與 tag 說明 |
-| [screenshots/](screenshots/) | App 1.0 連上 1.0（`v1-app1-list.png`）與升級後的 2.0（`v2-app1-list.png`）的清單畫面 |
+> 這是一份面試上機考的專案（2026-11-20 考試），交卷後持續優化中。考試時的過程與回顧見 [REVIEW.md](REVIEW.md)。
 
 ## 需要先安裝
 
@@ -55,6 +41,37 @@ mvnw.cmd spring-boot:run
 
 停止：在終端機按 `Ctrl + C`（MySQL 容器也會一併停止，資料保留）。
 
+用 jar 執行、改連自己的 MySQL、密碼設定，見 [docs/setup.md](docs/setup.md)。
+
+## 網址
+
+| 網址 | 說明 |
+|---|---|
+| http://localhost:8080 | 首頁；主要按鈕前往 2.0 網頁 |
+| http://localhost:8080/v2 | **2.0 網頁**：持股總覽、交易明細、買進、賣出、修改 |
+| http://localhost:8080/holdings | 第一版持股清單（以「張」記） |
+| http://localhost:8080/api/v1/... | 手機 App 1.0 用的 API，規格見 [docs/api-v1.md](docs/api-v1.md) |
+| http://localhost:8080/api/v2/... | 手機 App 2.0 用的 API，規格見 [API.md](API.md) |
+
+各頁面的功能與盈虧的算法見 [docs/features.md](docs/features.md)。
+
+## 更換官方網址（例如換成測試用的伺服器）
+
+股票名稱與收盤價取自臺灣證券交易所、證券櫃檯買賣中心。兩個網址的**主機部分**可以用環境變數換掉，路徑和參數不變：
+
+| 環境變數 | 預設值 | 說明 |
+|---|---|---|
+| `TWSE_BASE_URL` | `https://www.twse.com.tw` | 上市股票（證交所） |
+| `TPEX_BASE_URL` | `https://www.tpex.org.tw` | 上櫃股票（櫃買中心） |
+| `HOLIDAY_API_ENABLED` | `true` | 設成 `false` 時不向證交所查休市日、不對外連線，只用程式內附的資料 |
+
+```bash
+# macOS / Linux（Windows 的寫法見 docs/quote.md）
+TWSE_BASE_URL=http://localhost:9000 TPEX_BASE_URL=http://localhost:9000 ./mvnw spring-boot:run
+```
+
+Windows 的設定方式、實際呼叫的網址、收盤價多久更新一次，見 [docs/quote.md](docs/quote.md)。
+
 ## 執行測試
 
 ```bash
@@ -75,3 +92,21 @@ mvnw.cmd test
 不會動到開發用的資料庫。沒有 Docker（或 Docker Desktop 沒開）時，這組測試會顯示為略過（Skipped），其他測試照常執行。
 第一次執行要下載 MySQL 映像檔，會比較久。
 
+各測試類別測了什麼、2.0 網頁的 JavaScript 測試怎麼跑，見 [docs/features.md](docs/features.md)。
+
+## 文件
+
+| 文件 | 內容 |
+|---|---|
+| [docs/setup.md](docs/setup.md) | 資料庫、密碼設定、用 jar 執行、改連自己的 MySQL |
+| [docs/features.md](docs/features.md) | 功能（網址、2.0 網頁、欄位規則）、盈虧計算規則與範例、測試 |
+| [docs/quote.md](docs/quote.md) | 官方行情：上市上櫃判斷、收盤價更新、更換官方網址、休市日判斷 |
+| [docs/api-v1.md](docs/api-v1.md) | 手機 App 1.0 用的 API（`/api/v1`） |
+| [API.md](API.md) | 手機 App 2.0 用的 API（`/api/v2`） |
+| [docs/design.md](docs/design.md) | 設計說明（時區、同時操作、防止重送等）、專案結構 |
+| [docs/limitations.md](docs/limitations.md) | 已知限制與之後可以怎麼做 |
+| [UPGRADE.md](UPGRADE.md) | 從 1.0 升級到 2.0：步驟、資料庫變動、回滾、上線後注意 |
+| [ISSUES.md](ISSUES.md) | 客服轉來的三則回報：原因、查證來源、處理方式 |
+| [REVIEW.md](REVIEW.md) | 考試的回顧：遇到的問題與解法、怎麼用 AI、之後的改善 |
+| [docs/exam-progress.md](docs/exam-progress.md) | 考試時各題的完成進度與 tag 說明 |
+| [screenshots/](screenshots/) | App 1.0 連上 1.0（`v1-app1-list.png`）與升級後的 2.0（`v2-app1-list.png`）的清單畫面 |

@@ -1,6 +1,6 @@
 # 持股記帳 2.0 API 文件（給 App 2.0 團隊）
 
-App 2.0 用這份文件串接 `/api/v2`。App 1.0 用的 `/api/v1` 照舊可用，規格見 README「手機 App 1.0 API」。
+App 2.0 用這份文件串接 `/api/v2`。App 1.0 用的 `/api/v1` 照舊可用，規格見 [docs/api-v1.md](docs/api-v1.md)。
 
 ## 目錄
 
