@@ -245,6 +245,65 @@ body {
 	display: none !important;
 }
 
+/* ---------- 大數字（優化 v2-number-display） ---------- */
+
+/* 表格裡被簡寫成「萬」「億」的數字：底部淡虛線，提示「這是簡寫，移上去或點一下看完整數字」。
+   摘要卡顯示的是完整金額，不加虛線（使用者決定），只有 .v2-tip 的提示框 */
+.v2-abbr {
+	text-decoration: underline dotted;
+	text-decoration-color: rgba(108, 117, 125, 0.6);
+	text-underline-offset: 0.2em;
+}
+
+/* 有提示框的數字（表格的簡寫、摘要卡 100 萬以上） */
+.v2-tip {
+	position: relative; /* 提示框以這個數字為基準定位 */
+	cursor: pointer; /* 手機（iPhone Safari）要看起來「可以點」，點一下才會有反應 */
+}
+
+/*
+ * 提示框（D-43）：內容取自 data-full 屬性。用 CSS 而不是瀏覽器內建的 title：title 要停約 1 秒才出現。
+ * 位置：數字的「上方、靠右對齊」。表格外層有左右捲動區塊（table-responsive），超出區塊的部分會被切掉；
+ * 往上彈出時，第一列上面還有表頭，靠右對齊時數字欄都在表格中間偏右，所以不會被切到。
+ * 預設看不到（visibility: hidden），滑鼠移上去、鍵盤 Tab 移過去、手機點一下（v2-page.js 加 v2-tip-open）時顯示。
+ */
+.v2-tip::after {
+	content: attr(data-full);
+	position: absolute;
+	right: 0;
+	bottom: calc(100% + 4px);
+	z-index: 10;
+	padding: 0.2rem 0.5rem;
+	border-radius: 0.25rem;
+	background-color: #212529;
+	color: #fff;
+	font-size: 0.8rem; /* rem：摘要卡的數字很大，提示框不跟著放大 */
+	font-weight: 400;
+	white-space: nowrap;
+	pointer-events: none; /* 提示框本身不擋住滑鼠，不會一直閃爍 */
+	visibility: hidden;
+}
+
+.v2-tip:hover::after,
+.v2-tip:focus-visible::after,
+.v2-tip.v2-tip-open::after {
+	visibility: visible;
+}
+
+/* 摘要卡的完整金額很長時：金額＋「元」維持同一行（text-nowrap），後面的百分比可以換到下一行，
+   不會撐出卡片、蓋到旁邊的卡片（.v2-num 預設不換行，這裡放寬） */
+.v2-stat-value.v2-num {
+	white-space: normal;
+}
+
+/* 摘要卡金額後面的單位「元」：小一點、不加粗，不搶數字的視線 */
+.v2-unit {
+	font-size: 0.55em;
+	font-weight: 400;
+	margin-left: 0.2em;
+	color: var(--bs-secondary-color);
+}
+
 /* 摘要卡裡的小字（例如收盤價日期）：不要跟著大數字放大加粗 */
 .v2-stat-value .small {
 	font-size: 0.85rem;

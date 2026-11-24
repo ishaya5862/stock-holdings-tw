@@ -23,24 +23,29 @@
 			- 市值、未實現：只算有收盤價的持股；收益率 = 未實現 ÷ 持有成本
 			- 已實現：全部持股（含已全部賣出）的歷次賣出加總
 		*/-->
+		<!--/* 摘要卡：顯示完整金額＋單位「元」，不簡寫（使用者要求；表格才簡寫，優化 v2-number-display） */-->
 		<div class="row g-3 mb-2" id="summary">
 			<div class="col">
 				<div class="v2-stat">
 					<div class="v2-stat-label">持有成本（含買進手續費）</div>
-					<div class="v2-stat-value v2-num text-start" th:text="${@v2Formats.money(summary.totalCost)}">654,429.75</div>
+					<div class="v2-stat-value v2-num text-start">
+						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardMoney(${summary.totalCost})}">654,429.75</span><span class="v2-unit">元</span></span>
+					</div>
 				</div>
 			</div>
 			<div class="col">
 				<div class="v2-stat">
 					<div class="v2-stat-label">市值</div>
-					<div class="v2-stat-value v2-num text-start" th:text="${@v2Formats.money(summary.marketValue)}">678,450.00</div>
+					<div class="v2-stat-value v2-num text-start">
+						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardMoney(${summary.marketValue})}">678,450.00</span><span class="v2-unit">元</span></span>
+					</div>
 				</div>
 			</div>
 			<div class="col">
 				<div class="v2-stat">
 					<div class="v2-stat-label" title="假設用收盤價全部賣出，已扣賣出手續費與證交稅">未實現損益（已扣稅費）</div>
 					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.unrealizedPnl)}">
-						<span th:text="${@v2Formats.signedMoney(summary.unrealizedPnl)}">+21,359.25</span>
+						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardSignedMoney(${summary.unrealizedPnl})}">+21,359.25</span><span class="v2-unit">元</span></span>
 						<small class="fs-6" th:text="${@v2Formats.signedPct(summary.returnPct)}">+3.26%</small>
 					</div>
 				</div>
@@ -50,7 +55,7 @@
 					<!--/* 已實現收益率 = 已實現損益 ÷ 賣出部分的成本（優化 realized-return）；沒有賣出過為「—」 */-->
 					<div class="v2-stat-label" title="收益率 = 已實現損益 ÷ 賣出部分的成本（含買進手續費）">已實現損益（累計）</div>
 					<div class="v2-stat-value v2-num text-start" th:classappend="${@v2Formats.pnlClass(summary.realizedPnl)}">
-						<span th:text="${@v2Formats.signedMoney(summary.realizedPnl)}">+17,135.75</span>
+						<span class="text-nowrap"><span th:replace="~{v2/fragments :: cardSignedMoney(${summary.realizedPnl})}">+17,135.75</span><span class="v2-unit">元</span></span>
 						<small class="fs-6" th:text="${@v2Formats.signedPct(summary.realizedReturnPct)}">+13.62%</small>
 					</div>
 				</div>
@@ -83,7 +88,10 @@
 				目前沒有持股，按「記一筆買進」開始記錄
 			</div>
 
-			<table th:unless="${holdings.isEmpty()}" class="table table-hover align-middle v2-table">
+			<!--/* table-responsive（overflow-x: auto）：欄位放不下時表格底部出現左右捲軸；
+				外框 .v2-section 是 overflow: hidden（為了圓角），沒有這層的話超出的欄位會被直接裁掉、看不到（優化 v2-number-display） */-->
+			<div th:unless="${holdings.isEmpty()}" class="table-responsive">
+			<table class="table table-hover align-middle v2-table">
 				<thead>
 					<tr>
 						<th class="ps-4">代號／名稱</th>
@@ -113,17 +121,19 @@
 						</td>
 
 						<th:block th:if="${h.dataError == null}">
-							<td class="v2-num" th:text="${@v2Formats.shares(h.shares)}">600</td>
-							<td class="v2-num" th:text="${@v2Formats.money(h.averageCost)}">613.37</td>
+							<!--/* 股數與金額：≥ 100 萬簡寫（fragments 的 shortShares／shortMoney／shortSignedMoney） */-->
+							<td class="v2-num"><span th:replace="~{v2/fragments :: shortShares(${h.shares})}">600</span></td>
+							<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.averageCost})}">613.37</span></td>
 							<td class="v2-num"><th:block th:replace="~{v2/fragments :: closePrice(${h})}"></th:block></td>
-							<td class="v2-num" th:text="${@v2Formats.money(h.marketValue)}">390,000.00</td>
-							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}"
-								th:text="${@v2Formats.signedMoney(h.unrealizedPnl)}">+20,252.25</td>
+							<td class="v2-num"><span th:replace="~{v2/fragments :: shortMoney(${h.marketValue})}">390,000.00</span></td>
+							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.unrealizedPnl)}">
+								<span th:replace="~{v2/fragments :: shortSignedMoney(${h.unrealizedPnl})}">+20,252.25</span>
+							</td>
 							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.returnPct)}"
 								th:text="${@v2Formats.signedPct(h.returnPct)}">+5.50%</td>
 							<!--/* 已實現收益率用小字放在金額下面；沒有賣出過就不顯示（避免每一列都多一個「—」） */-->
 							<td class="v2-num" th:classappend="${@v2Formats.pnlClass(h.realizedPnl)}">
-								<span th:text="${@v2Formats.signedMoney(h.realizedPnl)}">+16,706.75</span>
+								<span th:replace="~{v2/fragments :: shortSignedMoney(${h.realizedPnl})}">+16,706.75</span>
 								<div th:if="${h.realizedReturnPct != null}" class="small"
 									th:text="${@v2Formats.signedPct(h.realizedReturnPct)}">+13.62%</div>
 							</td>
@@ -139,8 +149,10 @@
 					</tr>
 				</tbody>
 			</table>
+			</div>
 		</div>
 		<p class="small text-secondary mt-2 mb-0">
+			表格中 100 萬以上的數字以「萬」「億」簡寫（有虛線底線），滑鼠移上去或點一下可以看完整數字。
 			金額到「分」：零股與部分賣出的成本依移動平均法分攤到分；手續費、證交稅依規定捨去到元。
 		</p>
 	</main>

@@ -154,6 +154,17 @@
 	type('0.7');
 	check('DOM 張 0.7 → 立刻提示賣超', document.getElementById('quantity-feedback').textContent, '不能超過持有的 600 股');
 
+	// 錯誤框（D-48）：紅色（danger）的開頭加粗體「錯誤！」；黃色（warning）不加（alertBox 沿用上面宣告的）
+	V2Form.handleError({ error: { code: 'OVERSELL', message: '2026-11-24 賣出 111 股，但當時只持有 0 股' } }, alertBox);
+	check('錯誤框 賣超 → 紅色', alertBox.className, 'alert alert-danger');
+	check('錯誤框 賣超 → 開頭「錯誤！」', alertBox.textContent, '錯誤！2026-11-24 賣出 111 股，但當時只持有 0 股');
+	check('錯誤框 「錯誤！」是粗體', alertBox.firstChild.tagName + ':' + alertBox.firstChild.textContent, 'STRONG:錯誤！');
+	V2Form.handleError({ error: { code: 'VALIDATION_ERROR', message: '價格必須大於 0', fields: {} } }, alertBox);
+	check('錯誤框 欄位錯誤 → 也加「錯誤！」', alertBox.textContent, '錯誤！價格必須大於 0');
+	V2Form.handleError({ error: { code: 'VERSION_CONFLICT', message: '這筆交易已在另一個裝置修改過，請重新整理後再操作' } }, alertBox);
+	check('錯誤框 版本衝突 → 黃色、不加「錯誤！」', alertBox.className + '｜' + alertBox.textContent.startsWith('錯誤！'),
+		'alert alert-warning｜false');
+
 	let pass = 0;
 	const lines = cases.map(function (c) {
 		const ok = c[1] === c[2];

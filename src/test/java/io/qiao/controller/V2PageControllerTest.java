@@ -1,5 +1,6 @@
 package io.qiao.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -12,6 +13,8 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,6 +98,117 @@ class V2PageControllerTest {
 				.andExpect(content().string(Matchers.not(Matchers.containsString("請更新 App 2.0"))))
 				.andExpect(content().string(Matchers.containsString("href=\"/v2/sell?code=2330\"")))
 				.andExpect(content().string(Matchers.containsString("href=\"/v2/holdings/2330\"")));
+	}
+
+	// ===== 大數字（優化 v2-number-display，D-40；D-45 門檻改成 100 萬）=====
+	// 買 20,000 股 @600：成交 12,000,000、手續費 17,100 → 持有成本 12,017,100；收盤 650 → 市值 13,000,000
+	// 未實現 13,000,000 − 18,525 − 39,000 − 12,017,100 = 925,375（未滿 100 萬，不簡寫）
+
+	private void buyLarge2330() {
+		tradeService.buy("2330", LocalDate.of(2026, 3, 2), 20_000, new BigDecimal("600.00"));
+	}
+
+	@Test
+	void 大數字_總覽表格簡寫成萬_虛線與完整金額提示_未滿100萬照舊() throws Exception {
+		buyLarge2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString(">1,300 萬<")))                 // 表格的市值
+				// 提示框（D-43）：完整數字放在 data-full（CSS 馬上顯示），tabindex 讓鍵盤也移得到；不用 title（有延遲）
+				.andExpect(content().string(Matchers.containsString("data-full=\"13,000,000.00 元\"")))
+				.andExpect(content().string(Matchers.containsString("tabindex=\"0\"")))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("title=\"13,000,000.00 元\""))))
+				.andExpect(content().string(Matchers.containsString("v2-abbr")))
+				.andExpect(content().string(Matchers.containsString(">+925,375.00<")))              // 未實現：未滿 100 萬
+				.andExpect(content().string(Matchers.containsString(">20,000<")))                    // 股數
+				.andExpect(content().string(Matchers.containsString("table-responsive")));           // 放不下時有左右捲軸
+	}
+
+	@Test
+	void 大數字_總覽摘要卡顯示完整金額加單位元_不簡寫() throws Exception {
+		buyLarge2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.containsString(">12,017,100.00</span><span class=\"v2-unit\">元</span>"))) // 持有成本
+				.andExpect(content().string(Matchers.containsString(">13,000,000.00</span><span class=\"v2-unit\">元</span>"))) // 市值
+				.andExpect(content().string(Matchers.containsString(">+925,375.00</span><span class=\"v2-unit\">元</span>")))   // 未實現
+				// 滿 100 萬的卡片：移上去或點一下顯示「約 X 萬元」（D-43）；未滿 100 萬的未實現沒有提示
+				.andExpect(content().string(Matchers.containsString("data-full=\"約 1,202 萬元\"")))  // 持有成本 12,017,100 → 1,201.71 萬
+				.andExpect(content().string(Matchers.containsString("data-full=\"約 1,300 萬元\"")))  // 市值
+				.andExpect(content().string(Matchers.not(Matchers.containsString("data-full=\"約 +93 萬元\""))));
+	}
+
+	@Test
+	void 大數字_摘要卡有提示框但沒有虛線_表格的簡寫兩者都有() throws Exception {
+		buyLarge2330();
+		String html = mockMvc.perform(get("/v2")).andReturn().getResponse().getContentAsString();
+
+		// D-44：卡片是完整金額不是簡寫 → 只有提示框（v2-tip），不加虛線（v2-abbr）
+		String cardTag = tagWith(html, "data-full=\"約 1,202 萬元\"");
+		assertThat(cardTag).contains("v2-tip").doesNotContain("v2-abbr");
+		// 表格的簡寫：虛線＋提示框
+		String tableTag = tagWith(html, "data-full=\"13,000,000.00 元\"");
+		assertThat(tableTag).contains("v2-abbr").contains("v2-tip");
+	}
+
+	/** 找出含有指定屬性的那個開頭標籤（例如 <span class="…" data-full="…" tabindex="0">），屬性順序不拘 */
+	private static String tagWith(String html, String attribute) {
+		Matcher matcher = Pattern.compile("<span[^>]*" + Pattern.quote(attribute) + "[^>]*>").matcher(html);
+		assertThat(matcher.find()).as("找不到 " + attribute).isTrue();
+		return matcher.group();
+	}
+
+	@Test
+	void 換頁時的紅色提示_開頭加錯誤() throws Exception {
+		// D-49：和表單的紅色錯誤框一致，開頭是粗體「錯誤！」
+		mockMvc.perform(get("/v2").flashAttr("errorMessage", "2330 目前沒有持股（已全部賣出），不能賣出"))
+				.andExpect(content().string(Matchers.containsString(
+						"<strong>錯誤！</strong><span>2330 目前沒有持股（已全部賣出），不能賣出</span>")));
+	}
+
+	@Test
+	void 大數字_明細交易表的成交金額簡寫_摘要卡完整金額() throws Exception {
+		buyLarge2330();
+
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString(">1,200 萬<")))                 // 成交金額 12,000,000
+				.andExpect(content().string(Matchers.containsString("data-full=\"12,000,000.00 元\"")))
+				.andExpect(content().string(Matchers.containsString(">17,100.00<")))                 // 手續費：未滿 100 萬
+				.andExpect(content().string(Matchers.containsString(">+925,375.00</span><span class=\"v2-unit\">元</span>")))
+				.andExpect(content().string(Matchers.containsString("table-responsive")));
+	}
+
+	@Test
+	void 大數字_明細的手續費證交稅已實現與股數_滿100萬都簡寫() throws Exception {
+		// 買 2,000,000 股 @1,000：成交 20 億、手續費 2,850,000（20 億 × 0.1425%）→ 成本 2,002,850,000
+		// 賣 1,000,000 股 @1,000：成交 10 億、手續費 1,425,000、證交稅 3,000,000（0.3%）、分攤成本 1,001,425,000
+		//                         已實現 1,000,000,000 − 1,425,000 − 3,000,000 − 1,001,425,000 = −5,850,000
+		tradeService.buy("2330", LocalDate.of(2026, 3, 2), 2_000_000, new BigDecimal("1000.00"));
+		tradeService.sell("2330", LocalDate.of(2026, 5, 15), 1_000_000, new BigDecimal("1000.00"));
+
+		mockMvc.perform(get("/v2/holdings/{code}", "2330"))
+				.andExpect(status().isOk())
+				.andExpect(content().string(Matchers.containsString(">285 萬<")))     // 買進手續費 2,850,000 → 285 萬
+				.andExpect(content().string(Matchers.containsString("data-full=\"2,850,000.00 元\"")))
+				.andExpect(content().string(Matchers.containsString(">143 萬<")))     // 賣出手續費 1,425,000 → 142.5 萬 → 143（四捨五入）
+				.andExpect(content().string(Matchers.containsString(">300 萬<")))     // 證交稅 3,000,000
+				.andExpect(content().string(Matchers.containsString("data-full=\"3,000,000.00 元\"")))
+				.andExpect(content().string(Matchers.containsString(">−585 萬<")))    // 已實現 −5,850,000（同樣的規則，帶正負號）
+				.andExpect(content().string(Matchers.containsString("data-full=\"−5,850,000.00 元\"")))
+				.andExpect(content().string(Matchers.containsString(">200 萬股<")))   // 股數 2,000,000
+				.andExpect(content().string(Matchers.containsString(">100 萬股<")))   // 交易後股數 1,000,000
+				.andExpect(content().string(Matchers.containsString("表格中 100 萬以上的數字")));
+	}
+
+	@Test
+	void 一般金額_表格沒有簡寫也沒有虛線() throws Exception {
+		buyAndSell2330();
+
+		mockMvc.perform(get("/v2"))
+				.andExpect(content().string(Matchers.not(Matchers.containsString("v2-abbr"))))
+				.andExpect(content().string(Matchers.not(Matchers.containsString(" 萬<"))));
 	}
 
 	@Test
@@ -310,7 +424,10 @@ class V2PageControllerTest {
 				// 格式：動作 代號 名稱 股數 × 價格（日期）
 				.andExpect(content().string(Matchers.containsString("data-description=\"賣出 2330 台積電 200 股 × 700.00 元（2026-08-20）\"")))
 				.andExpect(content().string(Matchers.containsString("data-version=")))
-				.andExpect(content().string(Matchers.containsString("/js/v2-trade-delete.js")));
+				.andExpect(content().string(Matchers.containsString("/js/v2-trade-delete.js")))
+				// D-48：修改、刪除是按鈕（原本是文字連結）
+				.andExpect(content().string(Matchers.containsString("class=\"btn btn-sm btn-outline-secondary me-1\"")))
+				.andExpect(content().string(Matchers.containsString("class=\"btn btn-sm btn-outline-danger\" data-delete-trade")));
 	}
 
 	// ===== 首頁、第一版網頁（C8-2 a） =====
