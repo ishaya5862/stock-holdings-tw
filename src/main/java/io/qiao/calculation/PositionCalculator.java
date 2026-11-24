@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
  * | 買進       | 剩餘成本 ＋（成交金額 ＋ 這筆的手續費）；每筆各自算手續費（每筆最低 20 元）               |
  * | 賣出       | 分攤成本 = 剩餘成本 × 賣出股數 ÷ 持有股數，四捨五入到分；全部賣出時 = 剩餘成本全部        |
  * |            | 已實現損益 = 成交金額 − 手續費 − 證交稅 − 分攤成本；剩餘成本 = 剩餘成本 − 分攤成本         |
+ * | 已實現收益率 | 每筆賣出：已實現損益 ÷ 分攤成本 × 100；整檔：Σ已實現損益 ÷ Σ分攤成本 × 100（不是各筆平均）；|
+ * |            | 四捨五入到小數第二位；沒有賣出過為 null（優化 realized-return）                            |
  * | 賣超       | 任何一筆賣出超過當時持有股數 → OversellException                                          |
  * | 平均成本   | 剩餘成本 ÷ 股數，四捨五入到分，只用來顯示（不拿去算別的，避免捨入誤差）                   |
  * | 未實現     | 照舊沿用第 4 題：收盤價全部賣出 − 賣出手續費 − 證交稅 − 剩餘成本；收益率分母 = 剩餘成本  |
@@ -63,6 +65,8 @@ public class PositionCalculator {
 		// 剩餘的買進金額（不含手續費）：只用來算 v1 的 buy_price（平均買進價），分攤方式和剩餘成本相同（C4-2）
 		BigDecimal remainingAmount = zero();
 		BigDecimal realizedPnl = zero();
+		// 已實現部分的成本（每次賣出的分攤成本加總）：整檔的已實現收益率 = Σ已實現 ÷ Σ分攤成本
+		BigDecimal realizedCost = zero();
 		List<TradeLine> lines = new ArrayList<>(ordered.size());
 
 		for (TradeInput trade : ordered) {
@@ -73,7 +77,7 @@ public class PositionCalculator {
 				shares += trade.shares();
 				remainingCost = toCents(remainingCost.add(amount).add(fee));
 				remainingAmount = toCents(remainingAmount.add(amount));
-				lines.add(new TradeLine(trade, amount, fee, null, null, null, shares, remainingCost));
+				lines.add(new TradeLine(trade, amount, fee, null, null, null, null, shares, remainingCost));
 				continue;
 			}
 
@@ -90,7 +94,9 @@ public class PositionCalculator {
 			remainingCost = toCents(remainingCost.subtract(costOfSold));
 			remainingAmount = toCents(remainingAmount.subtract(amountOfSold));
 			realizedPnl = realizedPnl.add(realized);
-			lines.add(new TradeLine(trade, amount, fee, tax, costOfSold, realized, shares, remainingCost));
+			realizedCost = realizedCost.add(costOfSold);
+			lines.add(new TradeLine(trade, amount, fee, tax, costOfSold, realized, percentOf(realized, costOfSold),
+					shares, remainingCost));
 		}
 
 		BigDecimal averageCost = shares == 0
@@ -104,7 +110,17 @@ public class PositionCalculator {
 				: unrealized(code, shares, remainingCost, closePrice, valuationDate);
 
 		return new PositionResult(shares, remainingCost, remainingAmount, averageCost, averageBuyPrice, realizedPnl,
-				unrealized, List.copyOf(lines));
+				realizedCost, percentOf(realizedPnl, realizedCost), unrealized, List.copyOf(lines));
+	}
+
+	/**
+	 * 收益率（%）= 損益 ÷ 成本 × 100，四捨五入到小數第二位；成本是 0（沒有賣出過）時回 null。
+	 * 先乘 100 再除，只捨入一次（和未實現收益率相同）。
+	 * 賣出時分攤成本一定 > 0（價格、股數都 > 0），所以每一筆賣出都有值。
+	 * public：v2 總計（SummaryV2Response）也用這個，收益率的捨入規則只有一份。
+	 */
+	public static BigDecimal percentOf(BigDecimal pnl, BigDecimal cost) {
+		return cost.signum() == 0 ? null : pnl.multiply(HUNDRED).divide(cost, 2, RoundingMode.HALF_UP);
 	}
 
 	/**

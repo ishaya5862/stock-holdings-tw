@@ -188,6 +188,92 @@ class PositionCalculatorTest {
 		assertThat(result.realizedPnl()).isEqualByComparingTo("-10540");
 	}
 
+	// ===== 已實現收益率（優化 realized-return，D-37）=====
+	// 定義：已實現損益 ÷ 分攤成本 × 100，四捨五入到小數第二位（先乘 100 再除，只捨入一次，和未實現收益率相同）。
+	// 每一筆賣出用「這次」的數字；一檔用「歷次賣出加總」的數字（Σ已實現 ÷ Σ分攤成本，不是把各筆的百分比平均）。
+
+	@Test
+	void 已實現收益率_台積電範例_賣出那一筆與整檔都是13點62() {
+		// 已實現 16,706.75 ÷ 分攤成本 122,674.25 × 100 = 13.6188… → 13.62
+		List<TradeInput> trades = List.of(
+				buy(1L, D1, 300, "600.00"),
+				buy(2L, D2, 500, "620.00"),
+				sell(3L, D3, 200, "700.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.lines().get(2).realizedReturnPct()).isEqualByComparingTo("13.62");
+		assertThat(result.realizedCost()).isEqualByComparingTo("122674.25");
+		assertThat(result.realizedReturnPct()).isEqualByComparingTo("13.62");
+	}
+
+	@Test
+	void 已實現收益率_買進那一筆沒有值() {
+		List<TradeInput> trades = List.of(buy(1L, D1, 300, "600.00"), sell(2L, D2, 100, "650.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.lines().get(0).realizedReturnPct()).isNull();
+		assertThat(result.lines().get(1).realizedReturnPct()).isNotNull();
+	}
+
+	@Test
+	void 已實現收益率_沒有賣出過_整檔是null_分攤成本合計是0() {
+		// 0 ÷ 0 沒有意義 → null（畫面顯示「—」），和 D-28「沒有持股時 return_pct 維持 null」一致
+		List<TradeInput> trades = List.of(buy(1L, D1, 300, "600.00"), buy(2L, D2, 500, "620.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.realizedCost()).isEqualByComparingTo("0");
+		assertThat(result.realizedReturnPct()).isNull();
+	}
+
+	@Test
+	void 已實現收益率_虧損是負的_四捨五入() {
+		// 已實現 −10,540 ÷ 分攤成本 100,142 × 100 = −10.52505… → −10.53
+		List<TradeInput> trades = List.of(buy(1L, D1, 1000, "100.00"), sell(2L, D2, 1000, "90.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.lines().get(1).realizedReturnPct()).isEqualByComparingTo("-10.53");
+		assertThat(result.realizedReturnPct()).isEqualByComparingTo("-10.53");
+	}
+
+	@Test
+	void 已實現收益率_兩次賣出_整檔用加總計算_不是把兩筆百分比平均() {
+		// 買 1,000 股 @100：100,000 + 手續費 142（142.5 捨去）= 100,142
+		// 賣 500 @110：55,000 − 78（78.375 捨去）− 165 − 分攤 50,071 = 4,686 → 4,686 ÷ 50,071 × 100 = 9.3587… → 9.36
+		// 賣 500 @90（全部）：45,000 − 64（64.125 捨去）− 135 − 分攤 50,071 = −5,270 → −5,270 ÷ 50,071 × 100 = −10.5250… → −10.53
+		// 整檔：(4,686 − 5,270) ÷ (50,071 + 50,071) × 100 = −584 ÷ 100,142 × 100 = −0.5831… → −0.58
+		List<TradeInput> trades = List.of(
+				buy(1L, D1, 1000, "100.00"),
+				sell(2L, D2, 500, "110.00"),
+				sell(3L, D3, 500, "90.00"));
+
+		PositionResult result = calculator.calculate("2330", trades, null, TODAY);
+
+		assertThat(result.lines().get(1).realizedReturnPct()).isEqualByComparingTo("9.36");
+		assertThat(result.lines().get(2).realizedReturnPct()).isEqualByComparingTo("-10.53");
+		assertThat(result.realizedPnl()).isEqualByComparingTo("-584");
+		assertThat(result.realizedCost()).isEqualByComparingTo("100142");
+		assertThat(result.realizedReturnPct()).isEqualByComparingTo("-0.58");
+	}
+
+	@Test
+	void 已實現收益率_賣光後再買_新的買進不影響已實現收益率() {
+		// 第 4 題例子 3：成本 10,020、全部賣出已實現 429 → 429 ÷ 10,020 × 100 = 4.2814… → 4.28
+		// 之後再買 1,000 股 @20：只影響持有成本，已實現的分攤成本仍是 10,020
+		List<TradeInput> trades = List.of(
+				buy(1L, D1, 1000, "10.00"),
+				sell(2L, D2, 1000, "10.50"),
+				buy(3L, D3, 1000, "20.00"));
+
+		PositionResult result = calculator.calculate("2363", trades, null, TODAY);
+
+		assertThat(result.realizedCost()).isEqualByComparingTo("10020");
+		assertThat(result.realizedReturnPct()).isEqualByComparingTo("4.28");
+	}
+
 	// ===== 捨入：除不盡、全部賣光 =====
 
 	@Test

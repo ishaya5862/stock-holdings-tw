@@ -6,7 +6,7 @@ App 2.0 用這份文件串接 `/api/v2`。App 1.0 用的 `/api/v1` 照舊可用�
 
 1. [概要](#1-概要)
 2. [快速開始](#2-快速開始)
-3. [共用規則](#3-共用規則)（金額格式、錯誤格式、**防止重送 Idempotency-Key**、同時操作）
+3. [共用規則](#3-共用規則)（金額格式、錯誤格式、**防止重送 Idempotency-Key**、同時操作、**[開發時的注意事項](#37-app-20-開發時的注意事項檢查清單)**）
 4. [API 一覽](#4-api-一覽)
 5. [各 API 說明](#5-各-api-說明)
 6. [物件定義](#6-物件定義)
@@ -139,6 +139,26 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 | 金額 | `shares × price` 最多 **100 億元**（防止多打幾個 0），超過時錯誤標在 `shares` |
 | `version` | JSON 整數（修改時放在內容；刪除時放網址參數 `?version=`） |
 
+### 3.7 App 2.0 開發時的注意事項（檢查清單）
+
+開始寫 App 之前請逐項確認；細節在各節。
+
+| # | 項目 | 要怎麼做 | 細節 |
+|---|---|---|---|
+| 1 | **忽略不認得的欄位** | 解析 JSON 時不要用「多出欄位就報錯」的嚴格模式；也不要依賴欄位的順序。伺服器之後可能**新增**欄位（不會刪除或改名既有欄位） | — |
+| 2 | 金額、價格、收益率是字串 | 用精確的小數型別（`BigDecimal`）解析，不要轉成 `double` | [3.1](#31-金額為什麼是字串) |
+| 3 | null 欄位一定出現 | 用「值是不是 null」判斷，不要用「欄位存不存在」 | [3.2](#32-null-的規則) |
+| 4 | 寫入一律帶 `Idempotency-Key` | 每個新操作產生新的 UUID；逾時重送時用**同一個** key | [3.4](#34-防止重送idempotency-key一定要看) |
+| 5 | 修改、刪除帶 `version` | 用讀取時拿到的版本號；409 `VERSION_CONFLICT` 時重新讀取，不要自動覆蓋 | [3.5](#35-手機和電腦同時操作) |
+| 6 | 每個請求帶 `X-Client: app2` | 誤呼叫 v1 時會回 400 `USE_API_V2`，開發時就能發現 | [1](#1-概要) |
+| 7 | 錯誤一律顯示 `message` | `message` 是給使用者看的中文；`fields` 有值時標在對應的輸入框 | [3.3](#33-錯誤格式) |
+| 8 | **兩種收益率不要混在一起** | `return_pct` 是**未實現**收益率（分母：目前持有成本）；`realized_return_pct` 是**已實現**收益率（分母：已賣出部分的成本）。畫面上請分別標示，例如放在「未實現損益」「已實現損益」旁邊 | [6.1](#61-持股物件)、[8](#8-計算規則) |
+| 9 | **收益率一律顯示伺服器的值** | 不要在 App 自己算，尤其總計的已實現收益率是「加總後再除」，不是把各檔的百分比平均 | [8](#8-計算規則) |
+| 10 | 收益率是 null 時顯示「—」 | 例如沒有賣出過時 `realized_return_pct` 是 null，請顯示「—」，**不要顯示 0.00%**（會被誤以為賣出不賺不賠）；買進那一筆交易也是 null | [6.2](#62-交易物件) |
+| 11 | 已全部賣出的持股也在清單 | `shares` 為 0 的持股仍有已實現損益與已實現收益率；要不要顯示由 App 決定 | [5.1](#51-持股清單-get-apiv2holdings) |
+| 12 | 日期一律是台北時間 | 送出的 `trade_date` 用台北的日期；不能晚於台北的今天 | [3.6](#36-輸入規則硬性不合格回-400-並在-fields-標出欄位) |
+| 13 | `data_error` 不是 null 時 | 那一檔的計算欄位都是 null；請引導使用者到交易明細修正，其他持股照常顯示 | [6.1](#61-持股物件) |
+
 ---
 
 ## 4. API 一覽
@@ -169,7 +189,8 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 [
   {
     "id": 7, "code": "2330", "name": "台積電", "market": "TWSE",
-    "shares": 600, "average_cost": "613.37", "total_cost": "368022.75", "realized_pnl": "16706.75",
+    "shares": 600, "average_cost": "613.37", "total_cost": "368022.75",
+    "realized_pnl": "16706.75", "realized_return_pct": "13.62",
     "quote_status": "OK", "close_price": "650.00", "price_date": "2026-11-20",
     "last_close_price": "650.00", "last_price_date": "2026-11-20",
     "market_value": "390000.00", "unrealized_pnl": "20252.25", "return_pct": "5.50",
@@ -195,13 +216,14 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 [
   { "id": 13, "side": "BUY",  "trade_date": "2026-03-02", "date_estimated": false, "shares": 300,
     "price": "600.00", "amount": "180000.00", "fee": "256.00", "tax": null,
-    "cost_of_sold": null, "realized_pnl": null, "shares_after": 300, "version": 0 },
+    "cost_of_sold": null, "realized_pnl": null, "realized_return_pct": null, "shares_after": 300, "version": 0 },
   { "id": 14, "side": "BUY",  "trade_date": "2026-05-15", "date_estimated": false, "shares": 500,
     "price": "620.00", "amount": "310000.00", "fee": "441.00", "tax": null,
-    "cost_of_sold": null, "realized_pnl": null, "shares_after": 800, "version": 0 },
+    "cost_of_sold": null, "realized_pnl": null, "realized_return_pct": null, "shares_after": 800, "version": 0 },
   { "id": 15, "side": "SELL", "trade_date": "2026-08-20", "date_estimated": false, "shares": 200,
     "price": "700.00", "amount": "140000.00", "fee": "199.00", "tax": "420.00",
-    "cost_of_sold": "122674.25", "realized_pnl": "16706.75", "shares_after": 600, "version": 0 }
+    "cost_of_sold": "122674.25", "realized_pnl": "16706.75", "realized_return_pct": "13.62",
+    "shares_after": 600, "version": 0 }
 ]
 ```
 
@@ -212,7 +234,7 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 ```json
 {
   "total_cost": "368022.75", "market_value": "390000.00", "unrealized_pnl": "20252.25",
-  "return_pct": "5.50", "realized_pnl": "16706.75",
+  "return_pct": "5.50", "realized_pnl": "16706.75", "realized_return_pct": "13.62",
   "holding_count": 1, "quote_missing": 0, "data_error_count": 0
 }
 ```
@@ -334,6 +356,7 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 | `average_cost` | 字串 | 可 | 平均成本（含買進手續費）= `total_cost ÷ shares`，四捨五入到分；0 股或資料異常為 null |
 | `total_cost` | 字串 | 可 | 持有成本（目前持有股票的成本，含買進手續費）；資料異常為 null |
 | `realized_pnl` | 字串 | 可 | 已實現損益（歷次賣出加總）；資料異常為 null |
+| `realized_return_pct` | 字串 | 可 | 已實現收益率（%）= 歷次賣出的已實現損益加總 ÷ 歷次賣出的分攤成本加總 × 100，四捨五入到小數第二位；**沒有賣出過**或資料異常為 null（已全部賣出的持股照樣有值） |
 | `quote_status` | 字串 | 否 | 行情狀態：`OK`／`UPDATING`（伺服器剛啟動，還沒查到）／`UNAVAILABLE`（官方連不上）／`NO_RECENT_TRADE`（近期無成交，可能停止交易或下市） |
 | `close_price` | 字串 | 可 | 最近收盤價 |
 | `price_date` | 字串 | 可 | 收盤價的日期 |
@@ -341,7 +364,7 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 | `last_price_date` | 字串 | 可 | 上次收盤價的日期 |
 | `market_value` | 字串 | 可 | 市值 = 收盤價 × 股數；`quote_status` 不是 OK、0 股或資料異常為 null |
 | `unrealized_pnl` | 字串 | 可 | 未實現損益（假設用收盤價全部賣出，已扣賣出手續費、證交稅）；條件同 `market_value` |
-| `return_pct` | 字串 | 可 | 未實現收益率（%）= `unrealized_pnl ÷ total_cost × 100`，四捨五入到小數第二位 |
+| `return_pct` | 字串 | 可 | 未實現收益率（%）= `unrealized_pnl ÷ total_cost × 100`，四捨五入到小數第二位（和 `realized_return_pct` 是不同的數字，見 [3.7](#37-app-20-開發時的注意事項檢查清單) #8） |
 | `data_error` | 字串 | 可 | 資料異常的原因（交易時間線不合理，正常操作不會發生）；正常時為 null。發生時其他持股照常，請引導使用者到交易明細修正 |
 | `version` | 整數 | 否 | 持股版本號：這檔有任何交易異動就加 1，可以用來判斷資料是否變動 |
 
@@ -360,6 +383,7 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 | `tax` | 字串 | 可 | 證交稅（只有賣出有；買進為 null） |
 | `cost_of_sold` | 字串 | 可 | 這次賣出分攤掉的成本（只有賣出有） |
 | `realized_pnl` | 字串 | 可 | 這次賣出的已實現損益（只有賣出有） |
+| `realized_return_pct` | 字串 | 可 | 這次賣出的已實現收益率（%）= `realized_pnl ÷ cost_of_sold × 100`，四捨五入到小數第二位（只有賣出有；買進為 null） |
 | `shares_after` | 整數 | 可 | 這筆交易之後的持有股數 |
 | `version` | 整數 | 否 | 交易版本號：修改、刪除時要帶上 |
 
@@ -374,6 +398,7 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 | `unrealized_pnl` | 字串 | 否 | 有收盤價的持股未實現損益加總 |
 | `return_pct` | 字串 | 可 | `unrealized_pnl ÷ total_cost × 100`；沒有持有中的持股為 null |
 | `realized_pnl` | 字串 | 否 | 全部持股（含已全部賣出）的已實現損益加總 |
+| `realized_return_pct` | 字串 | 可 | `realized_pnl ÷ 全部持股的分攤成本加總 × 100`（加總後再除，不是各檔百分比的平均）；**沒有任何賣出**時為 null；資料異常的持股不算進來 |
 | `holding_count` | 整數 | 否 | 持有中的檔數 |
 | `quote_missing` | 整數 | 否 | 持有中但取不到收盤價的檔數（不算進市值與未實現，但算進成本） |
 | `data_error_count` | 整數 | 否 | 資料異常的檔數（不算進任何金額） |
@@ -424,14 +449,15 @@ Idempotency-Key: 8e03978e-40d5-43e8-bc93-6894a57f9324
 | 賣出分攤的成本 | 持有成本 × 賣出股數 ÷ 持有股數，四捨五入到分；**全部賣光時就是剩下的成本全部**（不會留下零頭） |
 | 已實現損益 | 賣出金額 − 賣出手續費 − 證交稅 − 分攤的成本 |
 | 未實現損益 | 假設用收盤價全部賣出：市值 − 賣出手續費 − 證交稅 − 持有成本 |
-| 收益率 | 未實現損益 ÷ 持有成本 × 100，四捨五入到小數第二位 |
+| 未實現收益率（`return_pct`） | 未實現損益 ÷ 持有成本 × 100，四捨五入到小數第二位 |
+| 已實現收益率（`realized_return_pct`） | 每筆賣出：這次的已實現損益 ÷ 這次分攤的成本 × 100。一檔、總計：已實現損益**加總** ÷ 分攤成本**加總** × 100（不是把各筆、各檔的百分比平均）。四捨五入到小數第二位；沒有賣出過為 null。沒有考慮持有多久（不是年化報酬率） |
 | 順序 | 依交易日期，同一天依輸入的先後；補登或修改過去的交易，之後的數字自動重算 |
 
 範例（[5.3](#53-交易明細-get-apiv2holdingscodetrades) 的資料）：
 
 - 買 300 股 @600：180,000 ＋ 手續費 256 ＝ 180,256
 - 買 500 股 @620：310,000 ＋ 手續費 441 ＝ 310,441 → 持有 800 股、成本 490,697
-- 賣 200 股 @700：分攤成本 490,697 × 200 ÷ 800 ＝ 122,674.25；已實現 140,000 − 199 − 420 − 122,674.25 ＝ **16,706.75**
+- 賣 200 股 @700：分攤成本 490,697 × 200 ÷ 800 ＝ 122,674.25；已實現 140,000 − 199 − 420 − 122,674.25 ＝ **16,706.75**；已實現收益率 16,706.75 ÷ 122,674.25 × 100 ＝ 13.6188… → **13.62%**
 - 剩 600 股、成本 368,022.75、平均成本 **613.37**；收盤 650 → 未實現 390,000 − 555 − 1,170 − 368,022.75 ＝ **20,252.25**（**5.50%**）
 
 ---
